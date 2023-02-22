@@ -4,10 +4,22 @@ use dialoguer::{theme::ColorfulTheme, Completion, Input};
 
 use crate::debugger::DebugError;
 
+pub enum BreakpointPoint {
+    name(String),
+    address(*const u8),
+}
+
 pub enum Command {
     Continue,
     Quit,
-    SetBreakpoint(*const u8),
+    GetRegister,
+    StepInstruction,
+    FindFunc(String),
+    ProcessCounter,
+    StepOut,
+    StepIn,
+    ViewSource(usize),
+    SetBreakpoint(BreakpointPoint),
 }
 
 impl FromStr for Command {
@@ -21,18 +33,49 @@ impl FromStr for Command {
         {
             "continue" => Ok(Command::Continue),
             "quit" => Ok(Command::Quit),
+            "get_registers" => Ok(Command::GetRegister),
+            "step_instruction" => Ok(Command::StepInstruction),
+            "pc" => Ok(Command::ProcessCounter),
+            "step_in" => Ok(Command::StepIn),
+            "find_func" => Ok(Command::FindFunc(
+                iter.next()
+                    .ok_or(DebugError::InvalidCommand(format!(
+                        "find_func requires argument \"{}\"",
+                        s
+                    )))?
+                    .to_string(),
+            )),
+            "step_out" => Ok(Command::StepOut),
+            "src" => Ok(Command::ViewSource(
+                iter.next()
+                    .ok_or(DebugError::InvalidCommand(format!(
+                        "src requires argument \"{}\"",
+                        s
+                    )))?
+                    .parse::<usize>()
+                    .map_err(|a| DebugError::InvalidArgument(a.to_string()))?,
+            )),
             "set_breakpoint" => Ok(Command::SetBreakpoint(
-                u64::from_str_radix(
-                    iter.next()
+                match u64::from_str_radix(
+                    iter.clone()
+                        .next()
                         .ok_or(DebugError::InvalidCommand(format!(
                             "set_breakpoint requires argument \"{}\"",
                             s
                         )))?
                         .trim_start_matches("0x"),
                     16,
-                )
-                .map_err(|a| DebugError::InvalidArgument(a.to_string()))?
-                    as *const u8,
+                ) {
+                    Ok(a) => BreakpointPoint::address(a as *const u8),
+                    Err(e) => BreakpointPoint::name(
+                        iter.next()
+                            .ok_or(DebugError::InvalidCommand(format!(
+                                "set_breakpoint requires argument \"{}\"",
+                                s
+                            )))?
+                            .to_string(),
+                    ),
+                },
             )),
             _ => Err(DebugError::InvalidCommand("Unknown command".to_string())),
         }
@@ -49,7 +92,14 @@ impl Default for CommandCompleter {
             commands: vec![
                 "continue".to_string(),
                 "quit".to_string(),
+                "src".to_string(),
                 "set_breakpoint".to_string(),
+                "step_in".to_string(),
+                "get_registers".to_string(),
+                "find_func".to_string(),
+                "pc".to_string(),
+                "step_out".to_string(),
+                "step_instruction".to_string(),
             ],
         }
     }

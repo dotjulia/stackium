@@ -1,7 +1,10 @@
+use std::ffi::c_void;
+
 use nix::{sys::ptrace, unistd::Pid};
 
 use crate::debugger::DebugError;
 
+#[derive(Debug, Clone)]
 pub struct Breakpoint {
     pub address: *const u8,
     original_byte: u8,
@@ -24,15 +27,17 @@ impl Breakpoint {
     }
 
     fn replace_byte(&self, child: Pid, byte: u8) -> Result<(), DebugError> {
-        let orig_data: u32 = match ptrace::read(child, self.address as *mut _) {
-            Ok(b) => b as u32,
+        let orig_data: u64 = match ptrace::read(child, self.address as *mut _) {
+            Ok(b) => b as u64,
             Err(e) => return Err(DebugError::NixError(e)),
         };
-        match ptrace::write(
-            child,
-            self.address as *mut _,
-            ((byte as u32) | (orig_data & !0xff)) as i32,
-        ) {
+        match unsafe {
+            ptrace::write(
+                child,
+                self.address as *mut _,
+                ((byte as u64) | (orig_data & !(0xff as u64))) as *mut c_void,
+            )
+        } {
             Ok(_) => Ok(()),
             Err(e) => Err(DebugError::NixError(e)),
         }

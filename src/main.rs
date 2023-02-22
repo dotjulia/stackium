@@ -52,7 +52,7 @@ fn debuggee_init(prog: PathBuf) -> Result<(), DebugError> {
 fn start_debuggee(prog: PathBuf) -> Result<(), DebugError> {
     match unsafe { fork() } {
         Ok(fr) => match fr {
-            Parent { child } => debugger_init(child),
+            Parent { child } => debugger_init(child, prog),
             Child => debuggee_init(prog),
         },
         Err(e) => Err(DebugError::NixError(e)),

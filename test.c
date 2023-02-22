@@ -8,6 +8,9 @@ void printing()
 
 int main()
 {
-    printf("%p\n", printing);
+    fprintf(stderr, "First!\n");
+    fprintf(stderr, "Second!\n");
+    fprintf(stderr, "%p\n", printing);
     printing();
+    fprintf(stderr, "Finishing!\n");
 }
