@@ -1,4 +1,4 @@
-use std::{borrow, ffi::c_void, fmt::Display, fs, path::PathBuf};
+use std::{borrow, ffi::c_void, fmt::Display, fs, num::NonZeroU64, path::PathBuf};
 
 use addr2line::gimli::{self, DebuggingInformationEntry};
 use nix::{
@@ -132,6 +132,87 @@ impl<R: gimli::Reader> Debugger<R> {
             .find_location(pc)?
             .ok_or(DebugError::InvalidPC(pc))?)
     }
+
+    fn get_addr_from_line(
+        &self,
+        line_to_find: u64,
+        file_to_search: String,
+    ) -> Result<u64, DebugError> {
+        let dwarf = self.context.dwarf();
+        let mut units = dwarf.units();
+        while let Ok(Some(unit_header)) = units.next() {
+            if let Ok(unit) = dwarf.unit(unit_header) {
+                if let Some(line_program) = unit.line_program {
+                    let mut rows = line_program.rows();
+                    while let Ok(Some((header, row))) = rows.next_row() {
+                        if let Some(file) = row.file(header) {
+                            if let Some(filename) = file.path_name().string_value(&dwarf.debug_str)
+                            {
+                                if filename.to_string()? == file_to_search
+                                    && row.line() == NonZeroU64::new(line_to_find)
+                                {
+                                    return Ok(row.address());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Err(DebugError::FunctionNotFound)
+    }
+
+    fn get_func_from_addr(&self, addr: u64) -> Result<FunctionMeta, DebugError> {
+        let dwarf = self.context.dwarf();
+        let mut units = dwarf.units();
+        while let Ok(Some(unit_header)) = units.next() {
+            if let Ok(unit) = dwarf.unit(unit_header) {
+                let mut entries = unit.entries();
+                while let Ok(Some((_, entry))) = entries.next_dfs() {
+                    if gimli::DW_TAG_subprogram == entry.tag() {
+                        let func_meta = get_function_meta(&entry, &dwarf)?;
+                        if let (Some(low_pc), Some(high_pc)) = (func_meta.low_pc, func_meta.high_pc)
+                        {
+                            if addr >= low_pc && addr <= low_pc + high_pc {
+                                return Ok(func_meta);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Err(DebugError::FunctionNotFound)
+    }
+
+    fn backtrace(&self) -> Result<(), DebugError> {
+        let print_meta = |func_meta: &FunctionMeta| {
+            if let Some(name) = &func_meta.name {
+                println!("{}()", name);
+            }
+        };
+        let pc = self.get_pc()?;
+        let mut func_meta = self.get_func_from_addr(pc)?;
+        print_meta(&func_meta);
+        let mut frame_pointer = self.get_registers()?.rbp;
+        let mut return_addr = self.read((frame_pointer + 8) as *mut _)?;
+        let mut max_depth = 20;
+        while func_meta.name != Some("main".to_string()) {
+            if --max_depth == 0 {
+                break;
+            }
+            let func_meta_res = self.get_func_from_addr(return_addr);
+            if func_meta_res.is_ok() {
+                func_meta = func_meta_res.unwrap();
+                print_meta(&func_meta);
+                frame_pointer = self.read(frame_pointer as *mut _)?;
+                return_addr = self.read((frame_pointer + 8) as *mut _)?;
+            } else {
+                println!("Unknown function");
+            }
+        }
+        Ok(())
+    }
+
     fn print_current_location(&self, window: usize) -> Result<(), DebugError> {
         let regs = self.get_registers().unwrap();
         let pc = regs.rip;
@@ -165,9 +246,25 @@ impl<R: gimli::Reader> Debugger<R> {
         loop {
             let input = command_prompt()?;
             match input {
+                Command::Help(commands) => {
+                    println!("Available commands: ");
+                    for command in commands {
+                        println!("{}", command);
+                    }
+                }
+                Command::Backtrace => self.backtrace()?,
+                Command::Read(addr) => {
+                    let val = self.read(addr as *mut _)?;
+                    println!("RBP: {:#x}", self.get_registers()?.rbp);
+                    println!("Value at {:#x}: {:#x}", addr, val);
+                }
                 Command::Continue => self.continue_exec()?,
                 Command::Quit => break,
                 Command::StepOut => self.step_out()?,
+                Command::FindLine(line, file) => {
+                    let addr = self.get_addr_from_line(line, file)?;
+                    println!("Address: {:#x}", addr);
+                }
                 Command::FindFunc(name) => {
                     let func = self.find_function_from_name(name);
                     println!("{:?}", func);

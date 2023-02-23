@@ -15,11 +15,15 @@ pub enum Command {
     GetRegister,
     StepInstruction,
     FindFunc(String),
+    Read(u64),
     ProcessCounter,
+    FindLine(u64, String),
     StepOut,
     StepIn,
     ViewSource(usize),
+    Backtrace,
     SetBreakpoint(BreakpointPoint),
+    Help(Vec<String>),
 }
 
 impl FromStr for Command {
@@ -36,7 +40,36 @@ impl FromStr for Command {
             "get_registers" => Ok(Command::GetRegister),
             "step_instruction" => Ok(Command::StepInstruction),
             "pc" => Ok(Command::ProcessCounter),
+            "backtrace" => Ok(Command::Backtrace),
             "step_in" => Ok(Command::StepIn),
+            "read" => Ok(Command::Read(
+                u64::from_str_radix(
+                    iter.next()
+                        .ok_or(DebugError::InvalidCommand(format!(
+                            "read requires argument \"{}\"",
+                            s
+                        )))?
+                        .trim_start_matches("0x"),
+                    16,
+                )
+                .map_err(|a| DebugError::InvalidArgument(a.to_string()))?,
+            )),
+            "help" => Ok(Command::Help(CommandCompleter::default().commands)),
+            "find_line" => Ok(Command::FindLine(
+                iter.next()
+                    .ok_or(DebugError::InvalidCommand(format!(
+                        "find_line requires 1st argument line \"{}\"",
+                        s
+                    )))?
+                    .parse::<u64>()
+                    .map_err(|a| DebugError::InvalidArgument(a.to_string()))?,
+                iter.next()
+                    .ok_or(DebugError::InvalidCommand(format!(
+                        "find_line requires 2nd argument file \"{}\"",
+                        s
+                    )))?
+                    .to_string(),
+            )),
             "find_func" => Ok(Command::FindFunc(
                 iter.next()
                     .ok_or(DebugError::InvalidCommand(format!(
@@ -93,10 +126,14 @@ impl Default for CommandCompleter {
                 "continue".to_string(),
                 "quit".to_string(),
                 "src".to_string(),
+                "help".to_string(),
+                "backtrace".to_string(),
                 "set_breakpoint".to_string(),
+                "read".to_string(),
                 "step_in".to_string(),
                 "get_registers".to_string(),
                 "find_func".to_string(),
+                "find_line".to_string(),
                 "pc".to_string(),
                 "step_out".to_string(),
                 "step_instruction".to_string(),
