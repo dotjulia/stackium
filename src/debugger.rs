@@ -451,45 +451,73 @@ impl<R: gimli::Reader + std::cmp::PartialEq> Debugger<R> {
         }
     }
 
+    fn retrieve_pieces(&self, pieces: Vec<gimli::Piece<R>>) -> Result<u64, DebugError> {
+        let mut value = 0;
+        for piece in pieces {
+            value = value
+                + match piece.location {
+                    gimli::Location::Empty => todo!(),
+                    gimli::Location::Register { register } => todo!(),
+                    gimli::Location::Address { address } => self.read(address as *mut _)?,
+                    gimli::Location::Value { value } => todo!(),
+                    gimli::Location::Bytes { value } => todo!(),
+                    gimli::Location::ImplicitPointer { value, byte_offset } => todo!(),
+                }
+        }
+        Ok(value)
+    }
+
     fn read_variables(&self) -> Result<(), DebugError> {
         let mut sub_entry;
         let mut unit;
         iter_every_entry!(self, sub_entry unit | {
-                    if sub_entry.tag() == gimli::DW_TAG_variable {
-                        if let Some(location) = sub_entry.attr_value(gimli::DW_AT_location)? {
-                            let location = location.exprloc_value().unwrap();
-                            let mut evaluation = location.evaluation(unit.encoding());
-                            let mut result = evaluation.evaluate().unwrap();
-                            while result != EvaluationResult::Complete {
-                                match result {
-                                    EvaluationResult::Complete => panic!(),
-                                    EvaluationResult::RequiresMemory { address, size, space, base_type } => todo!(),
-                                    EvaluationResult::RequiresRegister { register, base_type } => {
-                                        let value = self.get_register_from_abi(register.0)?;
-                                        result = evaluation.resume_with_register(gimli::Value::U64(value))?;
-                                    },
-                                    EvaluationResult::RequiresFrameBase => todo!(),
-                                    EvaluationResult::RequiresTls(_) => todo!(),
-                                    EvaluationResult::RequiresCallFrameCfa => todo!(),
-                                    EvaluationResult::RequiresAtLocation(_) => todo!(),
-                                    EvaluationResult::RequiresEntryValue(_) => todo!(),
-                                    EvaluationResult::RequiresParameterRef(_) => todo!(),
-                                    EvaluationResult::RequiresRelocatedAddress(_) => todo!(),
-                                    EvaluationResult::RequiresIndexedAddress { index, relocate } => todo!(),
-                                    EvaluationResult::RequiresBaseType(_) => todo!(),
-        }
-                            }
-                        }
-                        if let Some(name) = sub_entry.attr(gimli::DW_AT_name)? {
-                            if let Some(name) = name.string_value(&self.context.dwarf().debug_str) {
-                                let name = name.to_string()?;
-                                println!("VAR: {:?}", name);
-                                println!("{:?}", self.decode_type(sub_entry.attr(gimli::DW_AT_type)?.unwrap().value()));
-                                // self.get_entry_at_offset(offset)?;
-                            }
+            if sub_entry.tag() == gimli::DW_TAG_variable {
+                if let Some(location) = sub_entry.attr_value(gimli::DW_AT_location)? {
+                    let location = location.exprloc_value().unwrap();
+                    let mut evaluation = location.evaluation(unit.encoding());
+                    let mut result = evaluation.evaluate().unwrap();
+                    while result != EvaluationResult::Complete {
+                        match result {
+                            EvaluationResult::Complete => panic!(),
+                            EvaluationResult::RequiresMemory { address, size, space, base_type } => todo!(),
+                            EvaluationResult::RequiresRegister { register, base_type } => {
+                                let value = self.get_register_from_abi(register.0)?;
+                                result = evaluation.resume_with_register(gimli::Value::U64(value))?;
+                            },
+                            EvaluationResult::RequiresFrameBase => {
+                                let base_pointer = self.get_registers()?.rbp;
+                                result = evaluation.resume_with_frame_base(base_pointer)?;
+
+                            },
+                            EvaluationResult::RequiresTls(_) => todo!(),
+                            EvaluationResult::RequiresCallFrameCfa => todo!(),
+                            EvaluationResult::RequiresAtLocation(_) => todo!(),
+                            EvaluationResult::RequiresEntryValue(_) => todo!(),
+                            EvaluationResult::RequiresParameterRef(_) => todo!(),
+                            EvaluationResult::RequiresRelocatedAddress(_) => todo!(),
+                            EvaluationResult::RequiresIndexedAddress { index, relocate } => {
+                                let addr = self.context.dwarf().debug_addr.get_address(unit.header.address_size(), unit.addr_base, index)?;
+                                result = evaluation.resume_with_indexed_address(addr)?;
+
+
+                            },
+                            EvaluationResult::RequiresBaseType(_) => todo!(),
                         }
                     }
-                });
+                    println!("{:#x?}", self.retrieve_pieces(evaluation.result()));
+                }
+                if let Some(name) = sub_entry.attr(gimli::DW_AT_name)? {
+                    println!("Name {:?}", name);
+                    println!("{:?}", &self.context.dwarf().debug_str.get_str(offset));
+                    if let Some(name) = name.string_value(&self.context.dwarf().debug_str) {
+                        let name = name.to_string()?;
+                        println!("VAR: {:?}", name);
+                        println!("{:?}", self.decode_type(sub_entry.attr(gimli::DW_AT_type)?.unwrap().value()));
+                        // self.get_entry_at_offset(offset)?;
+                    }
+                }
+            }
+        });
         Ok(())
     }
 
