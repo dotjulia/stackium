@@ -5,8 +5,8 @@ use dialoguer::{theme::ColorfulTheme, Completion, Input};
 use crate::debugger::DebugError;
 
 pub enum BreakpointPoint {
-    name(String),
-    address(*const u8),
+    Name(String),
+    Address(*const u8),
 }
 
 pub enum Command {
@@ -17,11 +17,13 @@ pub enum Command {
     FindFunc(String),
     Read(u64),
     ProcessCounter,
+    DumpDwarf,
     FindLine(u64, String),
     StepOut,
     StepIn,
     ViewSource(usize),
     Backtrace,
+    ReadVariables,
     SetBreakpoint(BreakpointPoint),
     Help(Vec<String>),
 }
@@ -40,8 +42,10 @@ impl FromStr for Command {
             "get_registers" => Ok(Command::GetRegister),
             "step_instruction" => Ok(Command::StepInstruction),
             "pc" => Ok(Command::ProcessCounter),
+            "dump_dwarf" => Ok(Command::DumpDwarf),
             "backtrace" => Ok(Command::Backtrace),
             "step_in" => Ok(Command::StepIn),
+            "read_variables" => Ok(Command::ReadVariables),
             "read" => Ok(Command::Read(
                 u64::from_str_radix(
                     iter.next()
@@ -99,8 +103,8 @@ impl FromStr for Command {
                         .trim_start_matches("0x"),
                     16,
                 ) {
-                    Ok(a) => BreakpointPoint::address(a as *const u8),
-                    Err(e) => BreakpointPoint::name(
+                    Ok(a) => BreakpointPoint::Address(a as *const u8),
+                    Err(_) => BreakpointPoint::Name(
                         iter.next()
                             .ok_or(DebugError::InvalidCommand(format!(
                                 "set_breakpoint requires argument \"{}\"",
@@ -128,6 +132,7 @@ impl Default for CommandCompleter {
                 "src".to_string(),
                 "help".to_string(),
                 "backtrace".to_string(),
+                "read_variables".to_string(),
                 "set_breakpoint".to_string(),
                 "read".to_string(),
                 "step_in".to_string(),
@@ -137,6 +142,7 @@ impl Default for CommandCompleter {
                 "pc".to_string(),
                 "step_out".to_string(),
                 "step_instruction".to_string(),
+                "dump_dwarf".to_string(),
             ],
         }
     }
