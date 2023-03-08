@@ -1,8 +1,6 @@
-use std::{ffi::c_void, fmt::Display, fs, num::NonZeroU64, path::PathBuf, sync::Arc};
+use std::{ffi::c_void, fmt::Display, fs, num::NonZeroU64, process::exit};
 
-use addr2line::gimli::{
-    self, AttributeValue, DebuggingInformationEntry, Evaluation, EvaluationResult,
-};
+use addr2line::gimli::{self, AttributeValue, DebuggingInformationEntry, EvaluationResult};
 use nix::{
     libc::user_regs_struct,
     sys::{
@@ -11,6 +9,7 @@ use nix::{
     },
     unistd::Pid,
 };
+use serde::Serialize;
 
 use crate::{
     breakpoint::Breakpoint,
@@ -21,7 +20,6 @@ use crate::{
 pub enum DebugError {
     NixError(nix::Error),
     FunctionNotFound,
-    UnitNotFound,
     InvalidType,
     IoError(std::io::Error),
     GimliError(gimli::Error),
@@ -70,8 +68,8 @@ pub struct Debugger<R: gimli::Reader> {
     context: addr2line::Context<R>,
 }
 
-#[derive(Debug)]
-struct FunctionMeta {
+#[derive(Debug, Serialize)]
+pub struct FunctionMeta {
     name: Option<String>,
     low_pc: Option<u64>,
     high_pc: Option<u64>,
@@ -155,16 +153,6 @@ macro_rules! find_entry_with_offset {
     };
 }
 
-// fn get_entry_at_offset(&self, offset: R::Offset) -> Result<gimli::Unit<R>, DebugError> {
-//     let mut sub_entry;
-//     let mut unit;
-//     iter_every_entry!(self, sub_entry unit | {
-//         if sub_entry.offset().0 == offset {
-//             return Ok(sub_entry);
-//         }
-//     });
-//     Err(DebugError::UnitNotFound)
-// }
 fn tag_to_string(tag: gimli::DwTag) -> String {
     match tag {
         gimli::DW_TAG_array_type => "DW_TAG_array_type",
@@ -335,14 +323,121 @@ fn dw_at_to_string(attr: gimli::DwAt) -> String {
     .to_owned()
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 enum TypeName {
     Name(String),
     Ref(Box<TypeName>),
 }
 
+#[derive(Debug, Default, Serialize)]
+pub struct Variable {
+    name: Option<String>,
+    type_name: Option<TypeName>,
+    value: Option<u64>,
+    file: Option<String>,
+    line: Option<u64>,
+    addr: Option<u64>,
+}
+
+#[derive(Debug, Default, Serialize)]
+pub struct Registers {
+    pub r15: u64,
+    pub r14: u64,
+    pub r13: u64,
+    pub r12: u64,
+    pub rbp: u64,
+    pub rbx: u64,
+    pub r11: u64,
+    pub r10: u64,
+    pub r9: u64,
+    pub r8: u64,
+    pub rax: u64,
+    pub rcx: u64,
+    pub rdx: u64,
+    pub rsi: u64,
+    pub rdi: u64,
+    pub orig_rax: u64,
+    pub rip: u64,
+    pub cs: u64,
+    pub eflags: u64,
+    pub rsp: u64,
+    pub ss: u64,
+    pub fs_base: u64,
+    pub gs_base: u64,
+    pub ds: u64,
+    pub es: u64,
+    pub fs: u64,
+    pub gs: u64,
+}
+
+impl From<user_regs_struct> for Registers {
+    fn from(value: user_regs_struct) -> Self {
+        Registers {
+            r15: value.r15,
+            r14: value.r14,
+            r13: value.r13,
+            r12: value.r12,
+            rbp: value.rbp,
+            rbx: value.rbx,
+            r11: value.r11,
+            r10: value.r10,
+            r9: value.r9,
+            r8: value.r8,
+            rax: value.rax,
+            rcx: value.rcx,
+            rdx: value.rdx,
+            rsi: value.rsi,
+            rdi: value.rdi,
+            orig_rax: value.orig_rax,
+            rip: value.rip,
+            cs: value.cs,
+            eflags: value.eflags,
+            rsp: value.rsp,
+            ss: value.ss,
+            fs_base: value.fs_base,
+            gs_base: value.gs_base,
+            ds: value.ds,
+            es: value.es,
+            fs: value.fs,
+            gs: value.gs,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub enum CommandOutput {
+    Other(String),
+    Data(u64),
+    Variables(Vec<Variable>),
+    FunctionMeta(FunctionMeta),
+    CodeWindow(Vec<(u64, String, bool)>),
+    Registers(Registers),
+    DebugMeta(DebugMeta),
+    None,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DebugMeta {
+    file_type: String,
+    files: Vec<String>,
+    functions: i32,
+    vars: i32,
+}
+
+impl From<&str> for CommandOutput {
+    fn from(value: &str) -> Self {
+        CommandOutput::Other(value.to_owned())
+    }
+}
+
+impl From<std::string::String> for CommandOutput {
+    fn from(value: String) -> Self {
+        CommandOutput::Other(value)
+    }
+}
+
 impl<R: gimli::Reader + std::cmp::PartialEq> Debugger<R> {
-    fn new(child: Pid, context: addr2line::Context<R>) -> Self {
+    pub fn new(child: Pid, context: addr2line::Context<R>) -> Self {
         Debugger::<R> {
             child,
             context,
@@ -387,20 +482,21 @@ impl<R: gimli::Reader + std::cmp::PartialEq> Debugger<R> {
     }
 
     #[allow(dead_code)]
-    fn dump_dwarf_attrs(&self) -> Result<(), DebugError> {
+    fn dump_dwarf_attrs(&self) -> Result<String, DebugError> {
         let mut sub_entry;
         let mut unit;
+        let mut output = String::new();
         iter_every_entry!(self, sub_entry unit | {
-            println!("NAM: {:?}", unit.name.clone().unwrap().to_string().unwrap());
-            println!("ADR: {:#x?}", sub_entry.offset().0);
-            println!("TAG: {:?}", tag_to_string(sub_entry.tag()));
+            output += &format!("NAM: {:?}", unit.name.clone().unwrap().to_string().unwrap()).to_owned();
+            output += &format!("ADR: {:#x?}", sub_entry.offset().0).to_owned();
+            output += &format!("TAG: {:?}", tag_to_string(sub_entry.tag())).to_owned();
             let mut attrs = sub_entry.attrs();
             while let Some(attr) = attrs.next()? {
-                println!("ATR: {:?}", dw_at_to_string(attr.name()));
+                output += &format!("ATR: {:?}", dw_at_to_string(attr.name())).to_owned();
             }
-            println!("\n");
+            output += "\n";
         });
-        Ok(())
+        Ok(output)
     }
 
     fn decode_type(&self, offset: AttributeValue<R>) -> Result<TypeName, DebugError> {
@@ -409,7 +505,7 @@ impl<R: gimli::Reader + std::cmp::PartialEq> Debugger<R> {
             let mut offset_unit;
             find_entry_with_offset!(r, self, offset_entry offset_unit | {
                if let Some(name) = offset_entry.attr_value(gimli::DW_AT_name)? {
-                return Ok(TypeName::Name(name.string_value(&self.context.dwarf().debug_str).unwrap().to_string().unwrap().to_string()));
+                return Ok(TypeName::Name(name.string_value(&self.context.dwarf().debug_str).ok_or(DebugError::InvalidType)?.to_string().unwrap().to_string()));
                } else {
                 return Ok(TypeName::Ref(Box::new(self.decode_type(offset_entry.attr_value(gimli::DW_AT_type)?.unwrap())?)));
                }
@@ -451,27 +547,39 @@ impl<R: gimli::Reader + std::cmp::PartialEq> Debugger<R> {
         }
     }
 
+    fn get_piece_addr(piece: &gimli::Piece<R>) -> Option<u64> {
+        match piece.location {
+            gimli::Location::Address { address } => Some(address),
+            _ => None,
+        }
+    }
+
     fn retrieve_pieces(&self, pieces: Vec<gimli::Piece<R>>) -> Result<u64, DebugError> {
         let mut value = 0;
         for piece in pieces {
             value = value
                 + match piece.location {
                     gimli::Location::Empty => todo!(),
-                    gimli::Location::Register { register } => todo!(),
+                    gimli::Location::Register { register: _ } => todo!(),
                     gimli::Location::Address { address } => self.read(address as *mut _)?,
-                    gimli::Location::Value { value } => todo!(),
-                    gimli::Location::Bytes { value } => todo!(),
-                    gimli::Location::ImplicitPointer { value, byte_offset } => todo!(),
+                    gimli::Location::Value { value: _ } => todo!(),
+                    gimli::Location::Bytes { value: _ } => todo!(),
+                    gimli::Location::ImplicitPointer {
+                        value: _,
+                        byte_offset: _,
+                    } => todo!(),
                 }
         }
         Ok(value)
     }
 
-    fn read_variables(&self) -> Result<(), DebugError> {
+    fn read_variables(&self) -> Result<Vec<Variable>, DebugError> {
         let mut sub_entry;
         let mut unit;
+        let mut variables = Vec::new();
         iter_every_entry!(self, sub_entry unit | {
             if sub_entry.tag() == gimli::DW_TAG_variable {
+                let mut var = Variable::default();
                 if let Some(location) = sub_entry.attr_value(gimli::DW_AT_location)? {
                     let location = location.exprloc_value().unwrap();
                     let mut evaluation = location.evaluation(unit.encoding());
@@ -479,8 +587,8 @@ impl<R: gimli::Reader + std::cmp::PartialEq> Debugger<R> {
                     while result != EvaluationResult::Complete {
                         match result {
                             EvaluationResult::Complete => panic!(),
-                            EvaluationResult::RequiresMemory { address, size, space, base_type } => todo!(),
-                            EvaluationResult::RequiresRegister { register, base_type } => {
+                            EvaluationResult::RequiresMemory { address: _, size: _, space: _, base_type: _ } => todo!(),
+                            EvaluationResult::RequiresRegister { register, base_type: _ } => {
                                 let value = self.get_register_from_abi(register.0)?;
                                 result = evaluation.resume_with_register(gimli::Value::U64(value))?;
                             },
@@ -495,7 +603,7 @@ impl<R: gimli::Reader + std::cmp::PartialEq> Debugger<R> {
                             EvaluationResult::RequiresEntryValue(_) => todo!(),
                             EvaluationResult::RequiresParameterRef(_) => todo!(),
                             EvaluationResult::RequiresRelocatedAddress(_) => todo!(),
-                            EvaluationResult::RequiresIndexedAddress { index, relocate } => {
+                            EvaluationResult::RequiresIndexedAddress { index, relocate: _ } => {
                                 let addr = self.context.dwarf().debug_addr.get_address(unit.header.address_size(), unit.addr_base, index)?;
                                 result = evaluation.resume_with_indexed_address(addr)?;
 
@@ -504,21 +612,32 @@ impl<R: gimli::Reader + std::cmp::PartialEq> Debugger<R> {
                             EvaluationResult::RequiresBaseType(_) => todo!(),
                         }
                     }
-                    println!("{:#x?}", self.retrieve_pieces(evaluation.result()));
+                    let pieces = evaluation.result();
+                    var.addr = Self::get_piece_addr(&pieces[0]);
+                    var.value = self.retrieve_pieces(pieces).ok();
                 }
+                var.type_name = self.decode_type(sub_entry.attr(gimli::DW_AT_type)?.unwrap().value()).ok();
+
                 if let Some(name) = sub_entry.attr(gimli::DW_AT_name)? {
-                    println!("Name {:?}", name);
-                    println!("{:?}", &self.context.dwarf().debug_str.get_str(offset));
                     if let Some(name) = name.string_value(&self.context.dwarf().debug_str) {
                         let name = name.to_string()?;
-                        println!("VAR: {:?}", name);
-                        println!("{:?}", self.decode_type(sub_entry.attr(gimli::DW_AT_type)?.unwrap().value()));
-                        // self.get_entry_at_offset(offset)?;
+                        var.name = Some(name.to_string());
                     }
                 }
+                if let Some(file) = sub_entry.attr(gimli::DW_AT_decl_file)? {
+                    if let Some(file) = file.string_value(&self.context.dwarf().debug_str) {
+                        var.file = file.to_string().ok().map(|s| s.to_string());
+                    }
+                }
+                if let Some(line) = sub_entry.attr(gimli::DW_AT_decl_line)? {
+                    if let Some(line) = line.udata_value() {
+                        var.line = Some(line as u64);
+                    }
+                }
+                variables.push(var);
             }
         });
-        Ok(())
+        Ok(variables)
     }
 
     fn get_func_from_addr(&self, addr: u64) -> Result<FunctionMeta, DebugError> {
@@ -541,12 +660,15 @@ impl<R: gimli::Reader + std::cmp::PartialEq> Debugger<R> {
         Err(DebugError::FunctionNotFound)
     }
 
-    fn backtrace(&self) -> Result<(), DebugError> {
+    fn backtrace(&self) -> Result<String, DebugError> {
         let print_meta = |func_meta: &FunctionMeta| {
             if let Some(name) = &func_meta.name {
-                println!("{}()", name);
+                format!("{}()", name)
+            } else {
+                "??".to_string()
             }
         };
+        let mut output = String::new();
         let pc = self.get_pc()?;
         let mut func_meta = self.get_func_from_addr(pc)?;
         print_meta(&func_meta);
@@ -561,113 +683,136 @@ impl<R: gimli::Reader + std::cmp::PartialEq> Debugger<R> {
             let func_meta_res = self.get_func_from_addr(return_addr);
             if func_meta_res.is_ok() {
                 func_meta = func_meta_res.unwrap();
-                print_meta(&func_meta);
+                output += &print_meta(&func_meta).to_owned();
                 frame_pointer = self.read(frame_pointer as *mut _)?;
                 return_addr = self.read((frame_pointer + 8) as *mut _)?;
             } else {
                 println!("Unknown function");
             }
         }
-        Ok(())
+        Ok(output)
     }
 
-    fn print_current_location(&self, window: usize) -> Result<(), DebugError> {
+    fn print_current_location(
+        &self,
+        window: usize,
+    ) -> Result<Vec<(u64, String, bool)>, DebugError> {
         let regs = self.get_registers().unwrap();
         let pc = regs.rip;
         let line = self.get_line_from_pc(pc)?;
-        println!(
-            "Current location: {}:{}",
-            line.file.unwrap(),
-            line.line.unwrap()
-        );
+        let mut lines = Vec::new();
         let file = fs::read_to_string(line.file.unwrap()).unwrap();
         for (index, line_str) in file.lines().enumerate() {
             if index as u32 >= line.line.unwrap() - window as u32
                 && index as u32 <= line.line.unwrap() + window as u32
             {
-                println!(
-                    "{: >4}: {}{}",
-                    index,
-                    line_str,
-                    if index as u32 == line.line.unwrap() {
-                        " <---"
-                    } else {
-                        ""
-                    }
-                );
+                lines.push((
+                    index as u64,
+                    line_str.to_string(),
+                    index as u32 == line.line.unwrap(),
+                ));
             }
         }
-        Ok(())
+        Ok(lines)
     }
 
-    fn debug_loop(mut self) -> Result<(), DebugError> {
-        loop {
-            let input = command_prompt()?;
-            match input {
-                Command::DumpDwarf => self.dump_dwarf_attrs()?,
-                Command::Help(commands) => {
-                    println!("Available commands: ");
-                    for command in commands {
-                        println!("{}", command);
+    fn debug_meta(&self) -> Result<DebugMeta, DebugError> {
+        let mut entry;
+        let mut unit;
+        let mut vars = 0;
+        let mut functions = 0;
+        let mut files = Vec::new();
+        iter_every_entry!(self, entry unit | {
+            if entry.tag() == gimli::DW_TAG_variable {
+                vars += 1;
+            } else if entry.tag() == gimli::DW_TAG_subprogram {
+                functions += 1;
+            }
+            let name = unit.name.clone();
+            if let Some(name) = name {
+                if let Ok(name) = name.to_string() {
+                    let name = name.to_string();
+                    if !files.contains(&name) {
+                        files.push(name);
                     }
                 }
-                Command::Backtrace => self.backtrace()?,
-                Command::ReadVariables => self.read_variables()?,
-                Command::Read(addr) => {
-                    let val = self.read(addr as *mut _)?;
-                    println!("RBP: {:#x}", self.get_registers()?.rbp);
-                    println!("Value at {:#x}: {:#x}", addr, val);
-                }
-                Command::Continue => self.continue_exec()?,
-                Command::Quit => break,
-                Command::StepOut => self.step_out()?,
-                Command::FindLine(line, file) => {
-                    let addr = self.get_addr_from_line(line, file)?;
-                    println!("Address: {:#x}", addr);
-                }
-                Command::FindFunc(name) => {
-                    let func = self.find_function_from_name(name);
-                    println!("{:?}", func);
-                }
-                Command::StepIn => self.step_in()?,
-                Command::StepInstruction => self.step_instruction()?,
-                Command::ProcessCounter => {
-                    let regs = self.get_registers()?;
-                    println!("Process counter: {:#x}", regs.rip);
-                }
-                Command::ViewSource(window) => match self.print_current_location(window) {
-                    Ok(_) => {}
-                    Err(e) => println!("Couldn't inspect current location: {:?}", e),
-                },
-                Command::GetRegister => {
-                    let regs = self.get_registers()?;
-                    println!("Registers: {:?}", regs);
-                }
-                Command::SetBreakpoint(a) => match a {
-                    crate::prompt::BreakpointPoint::Name(name) => {
-                        let func = self.find_function_from_name(name)?;
-                        if let Some(addr) = func.low_pc {
-                            println!(
-                                "Setting breakpoint at function: {:?} {:#x}",
-                                func.name, addr,
-                            );
-                            let mut breakpoint = Breakpoint::new(self.child, addr as *const u8)?;
-                            breakpoint.enable(self.child)?;
-                            self.breakpoints.push(breakpoint);
-                        } else {
-                            println!("Couldn't find function: {:?}", func.name);
-                        }
-                    }
-                    crate::prompt::BreakpointPoint::Address(addr) => {
-                        println!("Setting breakpoint at address: {:?}", addr);
-                        let mut breakpoint = Breakpoint::new(self.child, addr)?;
+            }
+        });
+        Ok(DebugMeta {
+            file_type: format!("{:?}", self.context.dwarf().file_type),
+            functions,
+            vars,
+            files,
+        })
+    }
+
+    pub fn process_command(&mut self, command: Command) -> Result<CommandOutput, DebugError> {
+        match command {
+            Command::DebugMeta => Ok(CommandOutput::DebugMeta(self.debug_meta()?)),
+            Command::DumpDwarf => Ok(self.dump_dwarf_attrs()?.into()),
+            Command::Help(commands) => Ok(commands.join(", ").to_string().into()),
+            Command::Backtrace => Ok(self.backtrace()?.into()),
+            Command::ReadVariables => Ok(CommandOutput::Variables(self.read_variables()?)),
+            Command::Read(addr) => Ok(CommandOutput::Data(self.read(addr as *mut _)?)),
+            Command::Continue => {
+                self.continue_exec()?;
+                Ok(CommandOutput::None)
+            }
+            Command::Quit => exit(0),
+            Command::StepOut => self.step_out().map(|_| CommandOutput::None),
+            Command::FindLine(line, file) => {
+                let addr = self.get_addr_from_line(line, file)?;
+                Ok(CommandOutput::Data(addr))
+            }
+            Command::FindFunc(name) => {
+                let func = self.find_function_from_name(name);
+                Ok(CommandOutput::FunctionMeta(func?))
+            }
+            Command::StepIn => self.step_in().map(|_| CommandOutput::None),
+            Command::StepInstruction => self.step_instruction().map(|_| CommandOutput::None),
+            Command::ProcessCounter => {
+                let regs = self.get_registers()?;
+                Ok(CommandOutput::Data(regs.rip))
+            }
+            Command::ViewSource(window) => self
+                .print_current_location(window)
+                .map(|l| CommandOutput::CodeWindow(l)),
+            Command::GetRegister => {
+                let regs = self.get_registers()?;
+                Ok(CommandOutput::Registers(regs.into()))
+            }
+            Command::SetBreakpoint(a) => match a {
+                crate::prompt::BreakpointPoint::Name(name) => {
+                    let func = self.find_function_from_name(name)?;
+                    if let Some(addr) = func.low_pc {
+                        println!(
+                            "Setting breakpoint at function: {:?} {:#x}",
+                            func.name, addr,
+                        );
+                        let mut breakpoint = Breakpoint::new(self.child, addr as *const u8)?;
                         breakpoint.enable(self.child)?;
                         self.breakpoints.push(breakpoint);
+                    } else {
+                        println!("Couldn't find function: {:?}", func.name);
                     }
-                },
-            }
+                    Ok(CommandOutput::None)
+                }
+                crate::prompt::BreakpointPoint::Address(addr) => {
+                    println!("Setting breakpoint at address: {:?}", addr);
+                    let mut breakpoint = Breakpoint::new(self.child, addr)?;
+                    breakpoint.enable(self.child)?;
+                    self.breakpoints.push(breakpoint);
+                    Ok(CommandOutput::None)
+                }
+            },
         }
-        Ok(())
+    }
+
+    pub fn debug_loop(mut self) -> Result<(), DebugError> {
+        loop {
+            let input = command_prompt()?;
+            println!("{:?}", self.process_command(input));
+        }
     }
 
     #[allow(dead_code)]
@@ -810,7 +955,7 @@ impl<R: gimli::Reader + std::cmp::PartialEq> Debugger<R> {
         }
     }
 
-    fn waitpid(&self) -> Result<(), DebugError> {
+    pub fn waitpid(&self) -> Result<(), DebugError> {
         match waitpid(self.child, Some(WaitPidFlag::WUNTRACED)) {
             Ok(s) => match s {
                 nix::sys::wait::WaitStatus::Exited(pid, status) => {
@@ -885,17 +1030,4 @@ impl<R: gimli::Reader + std::cmp::PartialEq> Debugger<R> {
         ptrace::cont(self.child, None).map_err(|e| DebugError::NixError(e))?;
         self.waitpid()
     }
-}
-
-pub fn debugger_init(child: Pid, prog: PathBuf) -> Result<(), DebugError> {
-    println!("Child pid: {}", child);
-
-    let bin = &fs::read(prog)?[..];
-    let object_file = addr2line::object::read::File::parse(bin)?;
-    let context = addr2line::Context::new(&object_file)?;
-
-    let debugger = Debugger::new(child, context);
-    debugger.waitpid()?;
-    debugger.debug_loop()?;
-    Ok(())
 }

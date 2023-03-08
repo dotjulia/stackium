@@ -17,6 +17,7 @@ pub enum Command {
     FindFunc(String),
     Read(u64),
     ProcessCounter,
+    DebugMeta,
     DumpDwarf,
     FindLine(u64, String),
     StepOut,
@@ -46,6 +47,7 @@ impl FromStr for Command {
             "backtrace" => Ok(Command::Backtrace),
             "step_in" => Ok(Command::StepIn),
             "read_variables" => Ok(Command::ReadVariables),
+            "debug_meta" => Ok(Command::DebugMeta),
             "read" => Ok(Command::Read(
                 u64::from_str_radix(
                     iter.next()
@@ -132,6 +134,7 @@ impl Default for CommandCompleter {
                 "src".to_string(),
                 "help".to_string(),
                 "backtrace".to_string(),
+                "debug_meta".to_string(),
                 "read_variables".to_string(),
                 "set_breakpoint".to_string(),
                 "read".to_string(),

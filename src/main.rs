@@ -1,21 +1,38 @@
 use std::ffi::CStr;
+use std::fs;
 use std::path::PathBuf;
+use std::rc::Rc;
 
+use addr2line::gimli::{EndianReader, RunTimeEndian};
 use clap::Parser;
-use debugger::{debugger_init, DebugError};
+use debugger::DebugError;
 use nix::sys::ptrace;
 use nix::unistd::ForkResult::{Child, Parent};
-use nix::unistd::{execv, fork, getcwd};
+use nix::unistd::{execv, fork, getcwd, Pid};
+use web::serve_web;
+
+use crate::debugger::Debugger;
 
 mod breakpoint;
 mod debugger;
 mod prompt;
+#[cfg(feature = "web")]
+mod web;
+
+#[derive(Debug, Clone, clap::ValueEnum)]
+enum DebugInterfaceMode {
+    CLI,
+    #[cfg(feature = "web")]
+    Web,
+}
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     #[clap(index = 1)]
     program: PathBuf,
+    #[clap(short, long, default_value = "cli")]
+    mode: DebugInterfaceMode,
 }
 
 fn debuggee_init(prog: PathBuf) -> Result<(), DebugError> {
@@ -49,17 +66,39 @@ fn debuggee_init(prog: PathBuf) -> Result<(), DebugError> {
     }
 }
 
-fn start_debuggee(prog: PathBuf) -> Result<(), DebugError> {
+type DebuggerType = Debugger<EndianReader<RunTimeEndian, Rc<[u8]>>>;
+
+fn start_debuggee(prog: PathBuf) -> Result<Option<DebuggerType>, DebugError> {
     match unsafe { fork() } {
         Ok(fr) => match fr {
-            Parent { child } => debugger_init(child, prog),
-            Child => debuggee_init(prog),
+            Parent { child } => debugger_init(child, prog).map(|o| Some(o)),
+            Child => debuggee_init(prog).map(|_| None),
         },
         Err(e) => Err(DebugError::NixError(e)),
     }
 }
 
+pub fn debugger_init(child: Pid, prog: PathBuf) -> Result<DebuggerType, DebugError> {
+    println!("Child pid: {}", child);
+
+    let bin = &fs::read(prog)?[..];
+    let object_file = addr2line::object::read::File::parse(bin)?;
+    let context = addr2line::Context::new(&object_file)?;
+
+    let debugger = Debugger::new(child, context);
+    debugger.waitpid()?;
+    Ok(debugger)
+}
+
 fn main() -> Result<(), DebugError> {
     let args = Args::parse();
-    start_debuggee(args.program)
+    let debugger = start_debuggee(args.program)?.unwrap();
+    match args.mode {
+        DebugInterfaceMode::CLI => debugger.debug_loop(),
+        #[cfg(feature = "web")]
+        DebugInterfaceMode::Web => {
+            serve_web(debugger);
+            Ok(())
+        }
+    }
 }

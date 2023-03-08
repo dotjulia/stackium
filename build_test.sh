@@ -1,1 +1,1 @@
-clang -o test test.c -g -fno-omit-frame-pointer
+clang -o test2 test2.c -g -fno-omit-frame-pointer

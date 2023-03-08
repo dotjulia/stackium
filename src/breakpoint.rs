@@ -6,7 +6,7 @@ use crate::debugger::DebugError;
 
 #[derive(Debug, Clone)]
 pub struct Breakpoint {
-    pub address: *const u8,
+    pub address: u64,
     original_byte: u8,
     enabled: bool,
 }
@@ -14,7 +14,7 @@ pub struct Breakpoint {
 impl Breakpoint {
     pub fn new(child: Pid, address: *const u8) -> Result<Self, DebugError> {
         Ok(Self {
-            address,
+            address: address as u64,
             original_byte: match ptrace::read(child, address as *mut _) {
                 Ok(b) => b as u8,
                 Err(e) => {
