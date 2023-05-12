@@ -7,8 +7,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["web"]
+default = ["gui"]
 web = []
+gui = []
 
 [dependencies]
 nix = { version = "0.26.2", features = ["default", "personality"] }
@@ -18,3 +19,6 @@ addr2line = "0.19.0"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.93"
 tiny_http = "0.12.0"
+dioxus = "0.3.2"
+dioxus-desktop = "0.3.0"
+dioxus-free-icons = { version = "0.6.0", features = ["feather"] }
