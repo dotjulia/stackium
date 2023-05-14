@@ -6,15 +6,20 @@ use std::rc::Rc;
 use addr2line::gimli::{EndianReader, RunTimeEndian};
 use clap::Parser;
 use debugger::DebugError;
+#[cfg(feature = "gui")]
+use gui::run::run_gui;
 use nix::sys::ptrace;
 use nix::unistd::ForkResult::{Child, Parent};
 use nix::unistd::{execv, fork, getcwd, Pid};
+#[cfg(feature = "web")]
 use web::serve_web;
 
 use crate::debugger::Debugger;
 
 mod breakpoint;
 mod debugger;
+#[cfg(feature = "gui")]
+mod gui;
 mod prompt;
 #[cfg(feature = "web")]
 mod web;
@@ -91,6 +96,11 @@ pub fn debugger_init(child: Pid, prog: PathBuf) -> Result<DebuggerType, DebugErr
 }
 
 fn main() -> Result<(), DebugError> {
+    #[cfg(feature = "gui")]
+    {
+        run_gui();
+        return Ok(());
+    }
     let args = Args::parse();
     let debugger = start_debuggee(args.program)?.unwrap();
     match args.mode {
