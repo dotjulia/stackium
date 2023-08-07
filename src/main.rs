@@ -1,21 +1,20 @@
 use std::ffi::CStr;
 use std::fs;
 use std::path::PathBuf;
-use std::rc::Rc;
 
-use addr2line::gimli::{EndianReader, RunTimeEndian};
 use clap::Parser;
 use debugger::DebugError;
 use nix::sys::ptrace;
 use nix::unistd::ForkResult::{Child, Parent};
 use nix::unistd::{execv, fork, getcwd, Pid};
-use web::serve_web;
+use web::start_webserver;
 
 use crate::debugger::Debugger;
 
 mod breakpoint;
 mod debugger;
 mod prompt;
+mod util;
 #[cfg(feature = "web")]
 mod web;
 
@@ -66,9 +65,7 @@ fn debuggee_init(prog: PathBuf) -> Result<(), DebugError> {
     }
 }
 
-type DebuggerType = Debugger<EndianReader<RunTimeEndian, Rc<[u8]>>>;
-
-fn start_debuggee(prog: PathBuf) -> Result<Option<DebuggerType>, DebugError> {
+fn start_debuggee<'a>(prog: PathBuf) -> Result<Option<Debugger>, DebugError> {
     match unsafe { fork() } {
         Ok(fr) => match fr {
             Parent { child } => debugger_init(child, prog).map(|o| Some(o)),
@@ -78,14 +75,10 @@ fn start_debuggee(prog: PathBuf) -> Result<Option<DebuggerType>, DebugError> {
     }
 }
 
-pub fn debugger_init(child: Pid, prog: PathBuf) -> Result<DebuggerType, DebugError> {
+pub fn debugger_init<'a>(child: Pid, prog: PathBuf) -> Result<Debugger, DebugError> {
     println!("Child pid: {}", child);
 
-    let bin = &fs::read(prog)?[..];
-    let object_file = addr2line::object::read::File::parse(bin)?;
-    let context = addr2line::Context::new(&object_file)?;
-
-    let debugger = Debugger::new(child, context);
+    let debugger = Debugger::new(child, prog);
     debugger.waitpid()?;
     Ok(debugger)
 }
@@ -94,10 +87,10 @@ fn main() -> Result<(), DebugError> {
     let args = Args::parse();
     let debugger = start_debuggee(args.program)?.unwrap();
     match args.mode {
-        DebugInterfaceMode::CLI => debugger.debug_loop(),
+        DebugInterfaceMode::CLI => todo!(), //debugger.debug_loop(),
         #[cfg(feature = "web")]
         DebugInterfaceMode::Web => {
-            serve_web(debugger);
+            actix_web::rt::System::new().block_on(start_webserver(debugger))?;
             Ok(())
         }
     }
