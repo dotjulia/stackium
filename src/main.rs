@@ -87,9 +87,6 @@ fn main() -> Result<(), DebugError> {
     match args.mode {
         DebugInterfaceMode::CLI => debugger.debug_loop(),
         #[cfg(feature = "web")]
-        DebugInterfaceMode::Web => {
-            actix_web::rt::System::new().block_on(start_webserver(debugger))?;
-            Ok(())
-        }
+        DebugInterfaceMode::Web => start_webserver(debugger),
     }
 }

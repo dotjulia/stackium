@@ -18,7 +18,7 @@ impl Breakpoint {
             original_byte: match ptrace::read(child, address as *mut _) {
                 Ok(b) => b as u8,
                 Err(e) => {
-                    println!("Error in ptrace::read: {}", e);
+                    println!("Error in ptrace::read: {} {:?} {:?}", e, child, address);
                     return Err(DebugError::NixError(e));
                 }
             },

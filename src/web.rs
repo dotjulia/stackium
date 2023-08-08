@@ -1,57 +1,52 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
-use crate::{debugger::Debugger, prompt::Command};
-use actix_web::{
-    get, post,
-    web::{Data, Json},
-    App, HttpResponse, HttpServer, Responder,
+use rouille::{router, try_or_400, Response};
+
+use crate::{
+    debugger::{error::DebugError, Debugger},
+    prompt::Command,
 };
 
 // static WEBSITE: &'static str = include_str!("../web/index.html");
 
-struct AppState {
-    debugger: Mutex<Debugger>,
-}
-
-#[get("/")]
-async fn index(data: Data<AppState>) -> impl Responder {
-    let debugger = data.debugger.lock().unwrap();
-    HttpResponse::Ok().body(format!(
+fn index(debugger: Arc<Mutex<Debugger>>) -> rouille::Response {
+    let debugger = debugger.lock().unwrap();
+    rouille::Response::text(format!(
         "{} @ {}",
         debugger.program.to_str().unwrap(),
         debugger.child
     ))
 }
 
-#[get("/ping")]
-async fn ping() -> impl Responder {
-    HttpResponse::Ok().body("pong")
+fn ping() -> rouille::Response {
+    rouille::Response::text("pong")
 }
 
-#[post("/command")]
-async fn command(data: Data<AppState>, command: Json<Command>) -> impl Responder {
-    let mut debugger = data.debugger.lock().unwrap();
-    let command = command.0;
+fn command(debugger: Arc<Mutex<Debugger>>, command: Command) -> rouille::Response {
+    let mut debugger = debugger.lock().unwrap();
     let result = debugger.process_command(command);
     match result {
-        Ok(output) => HttpResponse::Ok().json(output),
-        Err(err) => HttpResponse::InternalServerError().body(format!("{:#?}", err)),
+        Ok(output) => Response::json(&output),
+        Err(err) => Response::text(format!("{:#?}", err)).with_status_code(500),
     }
 }
 
-pub async fn start_webserver(debugger: Debugger) -> std::io::Result<()> {
-    std::env::set_var("RUST_LOG", "debug");
-    env_logger::init();
-    let debugger = Mutex::new(debugger);
-    let data = Data::new(AppState { debugger });
-    HttpServer::new(move || {
-        App::new()
-            .app_data(data.clone())
-            .service(index)
-            .service(ping)
-            .service(command)
-    })
-    .bind(("127.0.0.1", 8080))?
-    .run()
-    .await
+pub fn start_webserver(debugger: Debugger) -> Result<(), DebugError> {
+    let debugger = Arc::from(Mutex::new(debugger));
+    println!("Now listening to localhost:8080");
+    rouille::start_server("0.0.0.0:8080", move |request| {
+        router!(request,
+            (GET) (/) => {
+                index(debugger.clone())
+            },
+            (GET) (/ping) => {
+                ping()
+            },
+            (POST) (/command) => {
+                let json = try_or_400!(rouille::input::json_input(request));
+                command(debugger.clone(), json)
+            },
+            _ => rouille::Response::empty_404()
+        )
+    });
 }

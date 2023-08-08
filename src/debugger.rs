@@ -409,6 +409,10 @@ impl Debugger {
 
     pub fn process_command(&mut self, command: Command) -> Result<CommandOutput, DebugError> {
         match command {
+            Command::WaitPid => {
+                self.waitpid_flag(Some(WaitPidFlag::WNOHANG))?;
+                Ok(CommandOutput::None)
+            }
             Command::DebugMeta => Ok(CommandOutput::DebugMeta(self.debug_meta()?)),
             Command::DumpDwarf => Ok(CommandOutput::DwarfAttributes(self.dump_dwarf_attrs()?)),
             Command::Help(commands) => Ok(CommandOutput::Help(commands)),
@@ -421,7 +425,7 @@ impl Debugger {
             }
             Command::Quit => std::process::exit(0),
             Command::StepOut => self.step_out().map(|_| CommandOutput::None),
-            Command::FindLine{ line, filename } => {
+            Command::FindLine { line, filename } => {
                 let addr = get_addr_from_line(&self.dwarf, line, filename)?;
                 Ok(CommandOutput::Data(addr))
             }
@@ -440,8 +444,8 @@ impl Debugger {
                     let func = find_function_from_name(&self.dwarf, name)?;
                     if let Some(addr) = func.low_pc {
                         println!(
-                            "Setting breakpoint at function: {:?} {:#x}",
-                            func.name, addr,
+                            "Setting breakpoint at function: {:?} {:#x} for {:?}",
+                            func.name, addr, self.child
                         );
                         let mut breakpoint = Breakpoint::new(self.child, addr as *const u8)?;
                         breakpoint.enable(self.child)?;
@@ -591,7 +595,11 @@ impl Debugger {
     }
 
     pub fn waitpid(&self) -> Result<(), DebugError> {
-        match waitpid(self.child, Some(WaitPidFlag::WUNTRACED)) {
+        self.waitpid_flag(Some(WaitPidFlag::WUNTRACED))
+    }
+
+    pub fn waitpid_flag(&self, flags: Option<WaitPidFlag>) -> Result<(), DebugError> {
+        match waitpid(self.child, flags) {
             Ok(s) => match s {
                 nix::sys::wait::WaitStatus::Exited(pid, status) => {
                     println!("Child {} exited with status: {}", pid, status);
@@ -616,8 +624,8 @@ impl Debugger {
                                 self.set_pc(self.get_pc()? - 1)?;
                             } else {
                                 println!(
-                                    "Child {} stopped with SIGTRAP and code {}",
-                                    pid, siginfo.si_code
+                                    "Child {} stopped with {:?} and code {}",
+                                    pid, siginfo, siginfo.si_code
                                 );
                             }
                         }

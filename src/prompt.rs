@@ -29,6 +29,7 @@ pub enum Command {
     StepIn,
     ViewSource(usize),
     Backtrace,
+    WaitPid,
     ReadVariables,
     SetBreakpoint(BreakpointPoint),
     Help(Vec<String>),
@@ -45,6 +46,7 @@ impl FromStr for Command {
         {
             "location" => Ok(Command::Location),
             "continue" => Ok(Command::Continue),
+            "waitpid" => Ok(Command::WaitPid),
             "quit" => Ok(Command::Quit),
             "get_registers" => Ok(Command::GetRegister),
             "step_instruction" => Ok(Command::StepInstruction),
@@ -149,6 +151,7 @@ impl Default for CommandCompleter {
                 "read".to_string(),
                 "step_in".to_string(),
                 "get_registers".to_string(),
+                "waitpid".to_string(),
                 "find_func".to_string(),
                 "find_line".to_string(),
                 "pc".to_string(),
