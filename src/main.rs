@@ -1,9 +1,8 @@
 use std::ffi::CStr;
-use std::fs;
 use std::path::PathBuf;
 
 use clap::Parser;
-use debugger::DebugError;
+use debugger::error::DebugError;
 use nix::sys::ptrace;
 use nix::unistd::ForkResult::{Child, Parent};
 use nix::unistd::{execv, fork, getcwd, Pid};
@@ -11,7 +10,6 @@ use web::start_webserver;
 
 use crate::debugger::Debugger;
 
-mod breakpoint;
 mod debugger;
 mod prompt;
 mod util;
@@ -87,7 +85,7 @@ fn main() -> Result<(), DebugError> {
     let args = Args::parse();
     let debugger = start_debuggee(args.program)?.unwrap();
     match args.mode {
-        DebugInterfaceMode::CLI => todo!(), //debugger.debug_loop(),
+        DebugInterfaceMode::CLI => debugger.debug_loop(),
         #[cfg(feature = "web")]
         DebugInterfaceMode::Web => {
             actix_web::rt::System::new().block_on(start_webserver(debugger))?;

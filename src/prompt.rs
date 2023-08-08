@@ -1,14 +1,18 @@
 use std::str::FromStr;
 
 use dialoguer::{theme::ColorfulTheme, Completion, Input};
+use serde::Deserialize;
 
-use crate::debugger::DebugError;
+use crate::debugger::error::DebugError;
 
+#[derive(Deserialize)]
 pub enum BreakpointPoint {
     Name(String),
-    Address(*const u8),
+    Address(u64),
 }
 
+#[derive(Deserialize)]
+#[serde(tag = "Command")]
 pub enum Command {
     Continue,
     Quit,
@@ -19,7 +23,8 @@ pub enum Command {
     ProcessCounter,
     DebugMeta,
     DumpDwarf,
-    FindLine(u64, String),
+    Location,
+    FindLine { line: u64, filename: String },
     StepOut,
     StepIn,
     ViewSource(usize),
@@ -38,6 +43,7 @@ impl FromStr for Command {
             .next()
             .ok_or(DebugError::InvalidCommand("empty command".to_string()))?
         {
+            "location" => Ok(Command::Location),
             "continue" => Ok(Command::Continue),
             "quit" => Ok(Command::Quit),
             "get_registers" => Ok(Command::GetRegister),
@@ -61,21 +67,23 @@ impl FromStr for Command {
                 .map_err(|a| DebugError::InvalidArgument(a.to_string()))?,
             )),
             "help" => Ok(Command::Help(CommandCompleter::default().commands)),
-            "find_line" => Ok(Command::FindLine(
-                iter.next()
+            "find_line" => Ok(Command::FindLine {
+                line: iter
+                    .next()
                     .ok_or(DebugError::InvalidCommand(format!(
                         "find_line requires 1st argument line \"{}\"",
                         s
                     )))?
                     .parse::<u64>()
                     .map_err(|a| DebugError::InvalidArgument(a.to_string()))?,
-                iter.next()
+                filename: iter
+                    .next()
                     .ok_or(DebugError::InvalidCommand(format!(
                         "find_line requires 2nd argument file \"{}\"",
                         s
                     )))?
                     .to_string(),
-            )),
+            }),
             "find_func" => Ok(Command::FindFunc(
                 iter.next()
                     .ok_or(DebugError::InvalidCommand(format!(
@@ -105,7 +113,7 @@ impl FromStr for Command {
                         .trim_start_matches("0x"),
                     16,
                 ) {
-                    Ok(a) => BreakpointPoint::Address(a as *const u8),
+                    Ok(a) => BreakpointPoint::Address(a),
                     Err(_) => BreakpointPoint::Name(
                         iter.next()
                             .ok_or(DebugError::InvalidCommand(format!(
@@ -129,6 +137,7 @@ impl Default for CommandCompleter {
     fn default() -> Self {
         CommandCompleter {
             commands: vec![
+                "location".to_string(),
                 "continue".to_string(),
                 "quit".to_string(),
                 "src".to_string(),

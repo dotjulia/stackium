@@ -2,7 +2,7 @@ use std::ffi::c_void;
 
 use nix::{sys::ptrace, unistd::Pid};
 
-use crate::debugger::DebugError;
+use super::error::DebugError;
 
 #[derive(Debug, Clone)]
 pub struct Breakpoint {
