@@ -1,6 +1,4 @@
-use std::sync::{Arc, Mutex};
-
-use rouille::{router, try_or_400, Response};
+use tiny_http::{Header, Response, Server};
 
 use crate::{
     debugger::{error::DebugError, Debugger},
@@ -9,44 +7,56 @@ use crate::{
 
 // static WEBSITE: &'static str = include_str!("../web/index.html");
 
-fn index(debugger: Arc<Mutex<Debugger>>) -> rouille::Response {
-    let debugger = debugger.lock().unwrap();
-    rouille::Response::text(format!(
+type ResponseType = Response<std::io::Cursor<Vec<u8>>>;
+
+fn index(debugger: &mut Debugger) -> ResponseType {
+    Response::from_string(format!(
         "{} @ {}",
         debugger.program.to_str().unwrap(),
         debugger.child
     ))
 }
 
-fn ping() -> rouille::Response {
-    rouille::Response::text("pong")
+fn ping() -> ResponseType {
+    Response::from_string("pong")
 }
 
-fn command(debugger: Arc<Mutex<Debugger>>, command: Command) -> rouille::Response {
-    let mut debugger = debugger.lock().unwrap();
+fn process_command(debugger: &mut Debugger, command: Command) -> ResponseType {
     let result = debugger.process_command(command);
     match result {
-        Ok(output) => Response::json(&output),
-        Err(err) => Response::text(format!("{:#?}", err)).with_status_code(500),
+        Ok(output) => Response::from_string(serde_json::to_string(&output).unwrap())
+            .with_header("Content-Type: application/json".parse::<Header>().unwrap()),
+        Err(err) => Response::from_string(format!("{:#?}", err)).with_status_code(500),
     }
 }
 
-pub fn start_webserver(debugger: Debugger) -> Result<(), DebugError> {
-    let debugger = Arc::from(Mutex::new(debugger));
+pub fn start_webserver(mut debugger: Debugger) -> Result<(), DebugError> {
     println!("Now listening to localhost:8080");
-    rouille::start_server("0.0.0.0:8080", move |request| {
-        router!(request,
-            (GET) (/) => {
-                index(debugger.clone())
+    let server = Server::http("0.0.0.0:8080").unwrap();
+    for mut request in server.incoming_requests() {
+        match request.method() {
+            tiny_http::Method::Get => match request.url() {
+                "/" => request.respond(index(&mut debugger)),
+                "/ping" => request.respond(ping()),
+                _ => request.respond(Response::empty(404)),
             },
-            (GET) (/ping) => {
-                ping()
+            tiny_http::Method::Post => match request.url() {
+                "/command" => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).unwrap();
+                    let command = serde_json::from_str(&content);
+                    match command {
+                        Ok(command) => request.respond(process_command(&mut debugger, command)),
+                        Err(e) => request.respond(
+                            Response::from_string(format!("{:#?}", e)).with_status_code(500),
+                        ),
+                    }
+                }
+                _ => request.respond(Response::empty(404)),
             },
-            (POST) (/command) => {
-                let json = try_or_400!(rouille::input::json_input(request));
-                command(debugger.clone(), json)
-            },
-            _ => rouille::Response::empty_404()
-        )
-    });
+            _ => request.respond(Response::empty(404)),
+        }
+        .unwrap_or_else(|e| eprintln!("Failed to respond to request {}", e));
+    }
+    Ok(())
 }
