@@ -1,10 +1,11 @@
 use std::ffi::c_void;
 
 use nix::{sys::ptrace, unistd::Pid};
+use serde::Serialize;
 
 use super::error::DebugError;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct Breakpoint {
     pub address: u64,
     original_byte: u8,

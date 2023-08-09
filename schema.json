@@ -1,0 +1,387 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Command",
+    "description": "A command for the debugger to execute When using the web API take a look at the request JSON schema at the `/schema` endpoint",
+    "oneOf": [
+        {
+            "description": "Resumes the execution of the child",
+            "type": "object",
+            "required": [
+                "Command"
+            ],
+            "properties": {
+                "Command": {
+                    "type": "string",
+                    "enum": [
+                        "Continue"
+                    ]
+                }
+            }
+        },
+        {
+            "description": "Quits the debugger",
+            "type": "object",
+            "required": [
+                "Command"
+            ],
+            "properties": {
+                "Command": {
+                    "type": "string",
+                    "enum": [
+                        "Quit"
+                    ]
+                }
+            }
+        },
+        {
+            "description": "Returns all registers with their current value",
+            "type": "object",
+            "required": [
+                "Command"
+            ],
+            "properties": {
+                "Command": {
+                    "type": "string",
+                    "enum": [
+                        "GetRegister"
+                    ]
+                }
+            }
+        },
+        {
+            "description": "Steps the child by one instruction",
+            "type": "object",
+            "required": [
+                "Command"
+            ],
+            "properties": {
+                "Command": {
+                    "type": "string",
+                    "enum": [
+                        "StepInstruction"
+                    ]
+                }
+            }
+        },
+        {
+            "description": "Finds a function with the specified name",
+            "type": "object",
+            "required": [
+                "Argument",
+                "Command"
+            ],
+            "properties": {
+                "Argument": {
+                    "type": "string"
+                },
+                "Command": {
+                    "type": "string",
+                    "enum": [
+                        "FindFunc"
+                    ]
+                }
+            }
+        },
+        {
+            "description": "Read from the specified address",
+            "type": "object",
+            "required": [
+                "Argument",
+                "Command"
+            ],
+            "properties": {
+                "Argument": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0.0
+                },
+                "Command": {
+                    "type": "string",
+                    "enum": [
+                        "Read"
+                    ]
+                }
+            }
+        },
+        {
+            "description": "Returns the address of the current instruction",
+            "type": "object",
+            "required": [
+                "Command"
+            ],
+            "properties": {
+                "Command": {
+                    "type": "string",
+                    "enum": [
+                        "ProgramCounter"
+                    ]
+                }
+            }
+        },
+        {
+            "description": "Provides statistics of the current program",
+            "type": "object",
+            "required": [
+                "Command"
+            ],
+            "properties": {
+                "Command": {
+                    "type": "string",
+                    "enum": [
+                        "DebugMeta"
+                    ]
+                }
+            }
+        },
+        {
+            "description": "Dumps all dwarf debug information; useful for debugging",
+            "type": "object",
+            "required": [
+                "Command"
+            ],
+            "properties": {
+                "Command": {
+                    "type": "string",
+                    "enum": [
+                        "DumpDwarf"
+                    ]
+                }
+            }
+        },
+        {
+            "description": "Retrieves the current location in the source code",
+            "type": "object",
+            "required": [
+                "Command"
+            ],
+            "properties": {
+                "Command": {
+                    "type": "string",
+                    "enum": [
+                        "Location"
+                    ]
+                }
+            }
+        },
+        {
+            "description": "Find the address of a line in the source code",
+            "type": "object",
+            "required": [
+                "Argument",
+                "Command"
+            ],
+            "properties": {
+                "Argument": {
+                    "type": "object",
+                    "required": [
+                        "filename",
+                        "line"
+                    ],
+                    "properties": {
+                        "filename": {
+                            "type": "string"
+                        },
+                        "line": {
+                            "type": "integer",
+                            "format": "uint64",
+                            "minimum": 0.0
+                        }
+                    }
+                },
+                "Command": {
+                    "type": "string",
+                    "enum": [
+                        "FindLine"
+                    ]
+                }
+            }
+        },
+        {
+            "description": "Step over the current function call by continuing execution until another line in the current function is reached",
+            "type": "object",
+            "required": [
+                "Command"
+            ],
+            "properties": {
+                "Command": {
+                    "type": "string",
+                    "enum": [
+                        "StepOut"
+                    ]
+                }
+            }
+        },
+        {
+            "description": "Continue execution until a new line in the source code is reached",
+            "type": "object",
+            "required": [
+                "Command"
+            ],
+            "properties": {
+                "Command": {
+                    "type": "string",
+                    "enum": [
+                        "StepIn"
+                    ]
+                }
+            }
+        },
+        {
+            "description": "View the source code around the current location",
+            "type": "object",
+            "required": [
+                "Argument",
+                "Command"
+            ],
+            "properties": {
+                "Argument": {
+                    "type": "integer",
+                    "format": "uint",
+                    "minimum": 0.0
+                },
+                "Command": {
+                    "type": "string",
+                    "enum": [
+                        "ViewSource"
+                    ]
+                }
+            }
+        },
+        {
+            "description": "Get the current backtrace",
+            "type": "object",
+            "required": [
+                "Command"
+            ],
+            "properties": {
+                "Command": {
+                    "type": "string",
+                    "enum": [
+                        "Backtrace"
+                    ]
+                }
+            }
+        },
+        {
+            "description": "For debugging purposes",
+            "type": "object",
+            "required": [
+                "Command"
+            ],
+            "properties": {
+                "Command": {
+                    "type": "string",
+                    "enum": [
+                        "WaitPid"
+                    ]
+                }
+            }
+        },
+        {
+            "description": "Read all variables found in the debug symbols",
+            "type": "object",
+            "required": [
+                "Command"
+            ],
+            "properties": {
+                "Command": {
+                    "type": "string",
+                    "enum": [
+                        "ReadVariables"
+                    ]
+                }
+            }
+        },
+        {
+            "description": "Set a breakpoints at the specified location",
+            "type": "object",
+            "required": [
+                "Argument",
+                "Command"
+            ],
+            "properties": {
+                "Argument": {
+                    "$ref": "#/definitions/BreakpointPoint"
+                },
+                "Command": {
+                    "type": "string",
+                    "enum": [
+                        "SetBreakpoint"
+                    ]
+                }
+            }
+        },
+        {
+            "description": "Retrieve all current breakpoints",
+            "type": "object",
+            "required": [
+                "Command"
+            ],
+            "properties": {
+                "Command": {
+                    "type": "string",
+                    "enum": [
+                        "GetBreakpoints"
+                    ]
+                }
+            }
+        },
+        {
+            "description": "For the CLI implementation",
+            "type": "object",
+            "required": [
+                "Argument",
+                "Command"
+            ],
+            "properties": {
+                "Argument": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "Command": {
+                    "type": "string",
+                    "enum": [
+                        "Help"
+                    ]
+                }
+            }
+        }
+    ],
+    "definitions": {
+        "BreakpointPoint": {
+            "description": "Specifies a location for a breakpoint",
+            "oneOf": [
+                {
+                    "description": "At the start of the specified function",
+                    "type": "object",
+                    "required": [
+                        "Name"
+                    ],
+                    "properties": {
+                        "Name": {
+                            "type": "string"
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                {
+                    "description": "At the specified address",
+                    "type": "object",
+                    "required": [
+                        "Address"
+                    ],
+                    "properties": {
+                        "Address": {
+                            "type": "integer",
+                            "format": "uint64",
+                            "minimum": 0.0
+                        }
+                    },
+                    "additionalProperties": false
+                }
+            ]
+        }
+    }
+}

@@ -5,33 +5,59 @@ use serde::Deserialize;
 
 use crate::debugger::error::DebugError;
 
-#[derive(Deserialize)]
+/// Specifies a location for a breakpoint
+#[derive(Deserialize, schemars::JsonSchema)]
 pub enum BreakpointPoint {
+    /// At the start of the specified function
     Name(String),
+    /// At the specified address
     Address(u64),
 }
 
-#[derive(Deserialize)]
-#[serde(tag = "Command")]
+/// A command for the debugger to execute
+/// When using the web API take a look at the request JSON schema at the `/schema` endpoint
+#[derive(Deserialize, schemars::JsonSchema)]
+#[serde(tag = "Command", content = "Argument")]
 pub enum Command {
+    /// Resumes the execution of the child
     Continue,
+    /// Quits the debugger
     Quit,
+    /// Returns all registers with their current value
     GetRegister,
+    /// Steps the child by one instruction
     StepInstruction,
+    /// Finds a function with the specified name
     FindFunc(String),
+    /// Read from the specified address
     Read(u64),
-    ProcessCounter,
+    /// Returns the address of the current instruction
+    ProgramCounter,
+    /// Provides statistics of the current program
     DebugMeta,
+    /// Dumps all dwarf debug information; useful for debugging
     DumpDwarf,
+    /// Retrieves the current location in the source code
     Location,
+    /// Find the address of a line in the source code
     FindLine { line: u64, filename: String },
+    /// Step over the current function call by continuing execution until another line in the current function is reached
     StepOut,
+    /// Continue execution until a new line in the source code is reached
     StepIn,
+    /// View the source code around the current location
     ViewSource(usize),
+    /// Get the current backtrace
     Backtrace,
+    /// For debugging purposes
     WaitPid,
+    /// Read all variables found in the debug symbols
     ReadVariables,
+    /// Set a breakpoints at the specified location
     SetBreakpoint(BreakpointPoint),
+    /// Retrieve all current breakpoints
+    GetBreakpoints,
+    /// For the CLI implementation
     Help(Vec<String>),
 }
 
@@ -47,10 +73,11 @@ impl FromStr for Command {
             "location" => Ok(Command::Location),
             "continue" => Ok(Command::Continue),
             "waitpid" => Ok(Command::WaitPid),
+            "get_breakpoints" => Ok(Command::GetBreakpoints),
             "quit" => Ok(Command::Quit),
             "get_registers" => Ok(Command::GetRegister),
             "step_instruction" => Ok(Command::StepInstruction),
-            "pc" => Ok(Command::ProcessCounter),
+            "pc" => Ok(Command::ProgramCounter),
             "dump_dwarf" => Ok(Command::DumpDwarf),
             "backtrace" => Ok(Command::Backtrace),
             "step_in" => Ok(Command::StepIn),
@@ -143,6 +170,7 @@ impl Default for CommandCompleter {
                 "continue".to_string(),
                 "quit".to_string(),
                 "src".to_string(),
+                "get_breakpoints".to_string(),
                 "help".to_string(),
                 "backtrace".to_string(),
                 "debug_meta".to_string(),

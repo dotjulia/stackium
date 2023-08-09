@@ -1,8 +1,10 @@
 [package]
-name = "memory_debugger"
+name = "stackium"
 author = "Julia Herbsthofer"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.71.1"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -20,4 +22,4 @@ tiny_http = "0.12"
 object = "0.31.1"
 gimli = "0.27.3"
 env_logger = "0.10.0"
-
+schemars = "0.8.12"

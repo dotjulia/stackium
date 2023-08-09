@@ -65,13 +65,13 @@ macro_rules! find_entry_with_offset {
             })
     };
 }
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 enum TypeName {
     Name(String),
     Ref(Box<TypeName>),
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, schemars::JsonSchema)]
 pub struct Variable {
     name: Option<String>,
     type_name: Option<TypeName>,
@@ -81,7 +81,7 @@ pub struct Variable {
     addr: Option<u64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct DwarfAttribute {
     name: String,
     addr: u64,
@@ -89,7 +89,7 @@ pub struct DwarfAttribute {
     attrs: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub enum CommandOutput {
     Data(u64),
     Variables(Vec<Variable>),
@@ -100,11 +100,12 @@ pub enum CommandOutput {
     Location(Location),
     DwarfAttributes(Vec<DwarfAttribute>),
     Help(Vec<String>),
+    Breakpoints(Vec<Breakpoint>),
     Backtrace(Vec<FunctionMeta>),
     None,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct DebugMeta {
     file_type: String,
     files: Vec<String>,
@@ -112,7 +113,7 @@ pub struct DebugMeta {
     vars: i32,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct Location {
     line: u64,
     file: String,
@@ -413,6 +414,7 @@ impl Debugger {
                 self.waitpid_flag(Some(WaitPidFlag::WNOHANG))?;
                 Ok(CommandOutput::None)
             }
+            Command::GetBreakpoints => Ok(CommandOutput::Breakpoints(self.breakpoints.clone())),
             Command::DebugMeta => Ok(CommandOutput::DebugMeta(self.debug_meta()?)),
             Command::DumpDwarf => Ok(CommandOutput::DwarfAttributes(self.dump_dwarf_attrs()?)),
             Command::Help(commands) => Ok(CommandOutput::Help(commands)),
@@ -435,7 +437,7 @@ impl Debugger {
             }
             Command::StepIn => self.step_in().map(|_| CommandOutput::None),
             Command::StepInstruction => self.step_instruction().map(|_| CommandOutput::None),
-            Command::ProcessCounter => {
+            Command::ProgramCounter => {
                 let regs = self.get_registers()?;
                 Ok(CommandOutput::Data(regs.rip))
             }

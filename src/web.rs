@@ -1,7 +1,7 @@
 use tiny_http::{Header, Response, Server};
 
 use crate::{
-    debugger::{error::DebugError, Debugger},
+    debugger::{error::DebugError, CommandOutput, Debugger},
     prompt::Command,
 };
 
@@ -30,12 +30,24 @@ fn process_command(debugger: &mut Debugger, command: Command) -> ResponseType {
     }
 }
 
+fn schema() -> ResponseType {
+    Response::from_string(serde_json::to_string_pretty(&schemars::schema_for!(Command)).unwrap())
+}
+
+fn res_schema() -> ResponseType {
+    Response::from_string(
+        serde_json::to_string_pretty(&schemars::schema_for!(CommandOutput)).unwrap(),
+    )
+}
+
 pub fn start_webserver(mut debugger: Debugger) -> Result<(), DebugError> {
     println!("Now listening to localhost:8080");
     let server = Server::http("0.0.0.0:8080").unwrap();
     for mut request in server.incoming_requests() {
         match request.method() {
             tiny_http::Method::Get => match request.url() {
+                "/schema" => request.respond(schema()),
+                "/response_schema" => request.respond(res_schema()),
                 "/" => request.respond(index(&mut debugger)),
                 "/ping" => request.respond(ping()),
                 _ => request.respond(Response::empty(404)),

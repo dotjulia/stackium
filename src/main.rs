@@ -1,3 +1,18 @@
+//! # Stackium
+//! A debugger for students to learn pointer and memory layout more intuitively
+//! ## Running the debugger
+//! Usage: `stackium [OPTIONS] <PROGRAM>`
+//! ```
+//! Arguments: <PROGRAM> - the binary file to debug
+//!
+//! Options:
+//! * -m, --mode <MODE> [default: cli] [possible values: cli, web]
+//! * -h, --help        Print help
+//! * -V, --version     Print version
+//! ```
+//! Launch with `-m web` to expose the API on port `8080`.
+//! Have a look at the [crate::prompt::Command] struct for documentation on the API or
+//! inspect the JSON Schema on `/schema` (or in the [schema.json](./schema.json)) or `/response_schema`.
 use std::ffi::CStr;
 use std::path::PathBuf;
 

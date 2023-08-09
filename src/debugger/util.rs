@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use super::{error::DebugError, Location};
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, schemars::JsonSchema)]
 pub struct FunctionMeta {
     pub name: Option<String>,
     pub low_pc: Option<u64>,

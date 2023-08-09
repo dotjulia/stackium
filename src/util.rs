@@ -171,7 +171,7 @@ pub fn dw_at_to_string(attr: gimli::DwAt) -> String {
 use nix::libc::user_regs_struct;
 use serde::Serialize;
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, schemars::JsonSchema)]
 pub struct Registers {
     pub r15: u64,
     pub r14: u64,
