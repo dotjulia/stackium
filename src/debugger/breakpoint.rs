@@ -1,7 +1,6 @@
 use std::ffi::c_void;
 
 use nix::{sys::ptrace, unistd::Pid};
-use serde::Serialize;
 use stackium_shared::Breakpoint;
 
 use super::error::DebugError;

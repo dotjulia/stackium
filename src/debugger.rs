@@ -8,10 +8,9 @@ use nix::{
     unistd::Pid,
 };
 use object::{Object, ObjectSection};
-use serde::Serialize;
 use stackium_shared::{
     Breakpoint, BreakpointPoint, Command, CommandOutput, DebugMeta, DwarfAttribute, FunctionMeta,
-    Location, TypeName, Variable,
+    Location, Registers, TypeName, Variable,
 };
 use std::{ffi::c_void, fs, path::PathBuf, sync::Arc};
 
@@ -22,7 +21,7 @@ mod util;
 use crate::{
     debugger::util::{get_function_meta, get_piece_addr},
     prompt::{command_prompt, CommandCompleter},
-    util::{dw_at_to_string, tag_to_string},
+    util::{dw_at_to_string, tag_to_string, FromUserRegsStruct},
 };
 
 use self::{
@@ -420,7 +419,7 @@ impl Debugger {
                 .map(|l| CommandOutput::CodeWindow(l)),
             Command::GetRegister => {
                 let regs = self.get_registers()?;
-                Ok(CommandOutput::Registers(regs.into()))
+                Ok(CommandOutput::Registers(Registers::from_regs(regs)))
             }
             Command::Location => Ok(CommandOutput::Location(get_line_from_pc(
                 &self.dwarf,
