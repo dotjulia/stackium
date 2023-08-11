@@ -1,36 +1,48 @@
-use ehttp::Request;
 use poll_promise::Promise;
-use stackium_shared::Command;
+use stackium_shared::{Command, CommandOutput, DebugMeta};
 use url::Url;
 
-use crate::command::dispatchCommand;
+use crate::command::dispatch;
+
+enum State {
+    Debugging {
+        backend_url: Url,
+        metadata: Promise<Result<DebugMeta, String>>,
+    },
+    UnrecoverableFailure {
+        message: String,
+    },
+}
 
 pub struct StackiumApp {
-    backend_url: Url,
-    binary_name: Promise<String>,
+    state: State,
+    next_state: Option<State>,
 }
 
 impl StackiumApp {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let backend_url = Url::parse("http://localhost:8080").unwrap()
+    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+        let backend_url = Url::parse("http://localhost:8080").unwrap();
         Self {
-            backend_url,
-            binary_name: {
-                dispatchCommand(backend_url, Command)
-                promise
+            next_state: None,
+            state: State::Debugging {
+                backend_url: backend_url.clone(),
+                metadata: { dispatch!(backend_url, Command::DebugMeta, DebugMeta) },
             },
         }
     }
 }
 
 impl eframe::App for StackiumApp {
-    /// Called by the frame work to save state before shutdown.
-    fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        eframe::set_value(storage, eframe::APP_KEY, self);
+    fn post_rendering(&mut self, _window_size_px: [u32; 2], _frame: &eframe::Frame) {
+        if let Some(next_state) = self.next_state.take() {
+            self.state = next_state;
+        }
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let Self { binary_name } = self;
+        egui::TopBottomPanel::bottom("debug warning").show(ctx, |ui| {
+            egui::warn_if_debug_build(ui);
+        });
 
         #[cfg(not(target_arch = "wasm32"))] // no File->Quit on web pages!
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -44,53 +56,80 @@ impl eframe::App for StackiumApp {
             });
         });
 
-        egui::SidePanel::left("side_panel").show(ctx, |ui| {
-            ui.heading("Side Panel");
-
-            ui.horizontal(|ui| {
-                ui.label("Write something: ");
-                ui.text_edit_singleline(label);
-            });
-
-            ui.add(egui::Slider::new(value, 0.0..=10.0).text("value"));
-            if ui.button("Increment").clicked() {
-                *value += 1.0;
-            }
-
-            ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    ui.label("powered by ");
-                    ui.hyperlink_to("egui", "https://github.com/emilk/egui");
-                    ui.label(" and ");
-                    ui.hyperlink_to(
-                        "eframe",
-                        "https://github.com/emilk/egui/tree/master/crates/eframe",
-                    );
-                    ui.label(".");
+        match &mut self.state {
+            State::Debugging {
+                backend_url: _,
+                metadata,
+            } => {
+                egui::Window::new("Metadata").show(ctx, |ui| {
+                    match metadata.ready() {
+                        Some(metadata) => match metadata {
+                            Ok(metadata) => {
+                                ui.heading(format!("Debugging {}", metadata.binary_name));
+                                ui.label(format!("{} functions", metadata.functions));
+                                ui.label(format!("{} variables", metadata.vars));
+                                metadata.files.iter().for_each(|file| {
+                                    ui.label(file);
+                                });
+                            }
+                            Err(message) => {
+                                self.next_state = Some(State::UnrecoverableFailure {
+                                    message: message.clone(),
+                                });
+                            }
+                        },
+                        None => {
+                            ui.spinner();
+                        }
+                    };
                 });
-            });
-        });
-
-        egui::CentralPanel::default().show(ctx, |ui| {
-            // The central panel the region left after adding TopPanel's and SidePanel's
-
-            ui.heading("eframe template");
-            ui.hyperlink("https://github.com/emilk/eframe_template");
-            ui.add(egui::github_link_file!(
-                "https://github.com/emilk/eframe_template/blob/master/",
-                "Source code."
-            ));
-            egui::warn_if_debug_build(ui);
-        });
-
-        if false {
-            egui::Window::new("Window").show(ctx, |ui| {
-                ui.label("Windows can be moved by dragging them.");
-                ui.label("They are automatically sized based on contents.");
-                ui.label("You can turn on resizing and scrolling if you like.");
-                ui.label("You would normally choose either panels OR windows.");
-            });
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.heading(format!(
+                        "Debugging {}",
+                        match metadata.ready() {
+                            Some(m) => match m {
+                                Ok(m) => m.binary_name.clone(),
+                                Err(_) => "Loading...".to_owned(),
+                            },
+                            None => "Loading...".to_owned(),
+                        }
+                    ));
+                });
+            }
+            State::UnrecoverableFailure { message } => {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.heading("Error");
+                    ui.label(message.clone());
+                });
+            }
         }
+
+        // egui::SidePanel::left("side_panel").show(ctx, |ui| {
+        //     ui.heading("Side Panel");
+
+        //     ui.horizontal(|ui| {
+        //         ui.label("Write something: ");
+        //         ui.text_edit_singleline(label);
+        //     });
+
+        //     ui.add(egui::Slider::new(value, 0.0..=10.0).text("value"));
+        //     if ui.button("Increment").clicked() {
+        //         *value += 1.0;
+        //     }
+
+        //     ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
+        //         ui.horizontal(|ui| {
+        //             ui.spacing_mut().item_spacing.x = 0.0;
+        //             ui.label("powered by ");
+        //             ui.hyperlink_to("egui", "https://github.com/emilk/egui");
+        //             ui.label(" and ");
+        //             ui.hyperlink_to(
+        //                 "eframe",
+        //                 "https://github.com/emilk/egui/tree/master/crates/eframe",
+        //             );
+        //             ui.label(".");
+        //         });
+        //     });
+        // });
     }
 }
