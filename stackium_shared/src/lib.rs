@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Default, Serialize, schemars::JsonSchema)]
+#[derive(Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Registers {
     pub r15: u64,
     pub r14: u64,
@@ -36,7 +36,7 @@ pub struct Registers {
     pub gs: u64,
 }
 
-#[derive(Debug, Serialize, schemars::JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub enum CommandOutput {
     Data(u64),
     Variables(Vec<Variable>),
@@ -52,28 +52,29 @@ pub enum CommandOutput {
     None,
 }
 
-#[derive(Debug, Serialize, schemars::JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub enum TypeName {
     Name(String),
     Ref(Box<TypeName>),
 }
 
-#[derive(Debug, Serialize, schemars::JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DebugMeta {
+    pub binary_name: String,
     pub file_type: String,
     pub files: Vec<String>,
     pub functions: i32,
     pub vars: i32,
 }
 
-#[derive(Debug, Serialize, schemars::JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Location {
     pub line: u64,
     pub file: String,
     pub column: u64,
 }
 
-#[derive(Debug, Default, Serialize, schemars::JsonSchema)]
+#[derive(Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Variable {
     pub name: Option<String>,
     pub type_name: Option<TypeName>,
@@ -83,7 +84,7 @@ pub struct Variable {
     pub addr: Option<u64>,
 }
 
-#[derive(Debug, Serialize, schemars::JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DwarfAttribute {
     pub name: String,
     pub addr: u64,
@@ -91,7 +92,7 @@ pub struct DwarfAttribute {
     pub attrs: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Clone, schemars::JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, schemars::JsonSchema)]
 pub struct FunctionMeta {
     pub name: Option<String>,
     pub low_pc: Option<u64>,
@@ -99,7 +100,7 @@ pub struct FunctionMeta {
     pub return_addr: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Breakpoint {
     pub address: u64,
     pub original_byte: u8,
@@ -107,7 +108,7 @@ pub struct Breakpoint {
 }
 
 /// Specifies a location for a breakpoint
-#[derive(Deserialize, schemars::JsonSchema)]
+#[derive(Deserialize, Serialize, schemars::JsonSchema)]
 pub enum BreakpointPoint {
     /// At the start of the specified function
     Name(String),
@@ -117,7 +118,7 @@ pub enum BreakpointPoint {
 
 /// A command for the debugger to execute
 /// When using the web API take a look at the request JSON schema at the `/schema` endpoint
-#[derive(Deserialize, schemars::JsonSchema)]
+#[derive(Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(tag = "Command", content = "Argument")]
 pub enum Command {
     /// Resumes the execution of the child
