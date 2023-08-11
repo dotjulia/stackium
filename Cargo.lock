@@ -594,7 +594,17 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "stackium_shared",
  "tiny_http",
+]
+
+[[package]]
+name = "stackium_shared"
+version = "0.1.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

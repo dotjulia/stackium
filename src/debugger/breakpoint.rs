@@ -2,18 +2,19 @@ use std::ffi::c_void;
 
 use nix::{sys::ptrace, unistd::Pid};
 use serde::Serialize;
+use stackium_shared::Breakpoint;
 
 use super::error::DebugError;
 
-#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
-pub struct Breakpoint {
-    pub address: u64,
-    original_byte: u8,
-    enabled: bool,
+pub trait DebuggerBreakpoint {
+    fn new(child: Pid, address: *const u8) -> Result<Breakpoint, DebugError>;
+    fn replace_byte(&self, child: Pid, byte: u8) -> Result<(), DebugError>;
+    fn enable(&mut self, child: Pid) -> Result<(), DebugError>;
+    fn disable(&mut self, child: Pid) -> Result<(), DebugError>;
 }
 
-impl Breakpoint {
-    pub fn new(child: Pid, address: *const u8) -> Result<Self, DebugError> {
+impl DebuggerBreakpoint for Breakpoint {
+    fn new(child: Pid, address: *const u8) -> Result<Self, DebugError> {
         Ok(Self {
             address: address as u64,
             original_byte: match ptrace::read(child, address as *mut _) {
@@ -44,7 +45,7 @@ impl Breakpoint {
         }
     }
 
-    pub fn enable(&mut self, child: Pid) -> Result<(), DebugError> {
+    fn enable(&mut self, child: Pid) -> Result<(), DebugError> {
         if self.enabled {
             return Err(DebugError::BreakpointInvalidState);
         }
@@ -53,7 +54,7 @@ impl Breakpoint {
         Ok(())
     }
 
-    pub fn disable(&mut self, child: Pid) -> Result<(), DebugError> {
+    fn disable(&mut self, child: Pid) -> Result<(), DebugError> {
         if !self.enabled {
             return Err(DebugError::BreakpointInvalidState);
         }

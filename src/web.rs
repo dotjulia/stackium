@@ -1,9 +1,7 @@
+use stackium_shared::{Command, CommandOutput};
 use tiny_http::{Header, Response, Server};
 
-use crate::{
-    debugger::{error::DebugError, CommandOutput, Debugger},
-    prompt::Command,
-};
+use crate::debugger::{error::DebugError, Debugger};
 
 // static WEBSITE: &'static str = include_str!("../web/index.html");
 

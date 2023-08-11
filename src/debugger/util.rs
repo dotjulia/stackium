@@ -2,16 +2,9 @@ use std::num::NonZeroU64;
 
 use gimli::Reader;
 use serde::Serialize;
+use stackium_shared::FunctionMeta;
 
 use super::{error::DebugError, Location};
-
-#[derive(Debug, Serialize, Clone, schemars::JsonSchema)]
-pub struct FunctionMeta {
-    pub name: Option<String>,
-    pub low_pc: Option<u64>,
-    pub high_pc: Option<u64>,
-    pub return_addr: Option<u64>,
-}
 
 pub fn get_function_meta<T: Reader>(
     entry: &gimli::DebuggingInformationEntry<T, <T as gimli::Reader>::Offset>,

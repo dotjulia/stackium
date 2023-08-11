@@ -9,6 +9,10 @@ use nix::{
 };
 use object::{Object, ObjectSection};
 use serde::Serialize;
+use stackium_shared::{
+    Breakpoint, BreakpointPoint, Command, CommandOutput, DebugMeta, DwarfAttribute, FunctionMeta,
+    Location, TypeName, Variable,
+};
 use std::{ffi::c_void, fs, path::PathBuf, sync::Arc};
 
 pub mod breakpoint;
@@ -17,14 +21,14 @@ mod util;
 
 use crate::{
     debugger::util::{get_function_meta, get_piece_addr},
-    prompt::{command_prompt, Command},
-    util::{dw_at_to_string, tag_to_string, Registers},
+    prompt::{command_prompt, CommandCompleter},
+    util::{dw_at_to_string, tag_to_string},
 };
 
 use self::{
-    breakpoint::Breakpoint,
+    breakpoint::DebuggerBreakpoint,
     error::DebugError,
-    util::{find_function_from_name, get_addr_from_line, get_line_from_pc, FunctionMeta},
+    util::{find_function_from_name, get_addr_from_line, get_line_from_pc},
 };
 
 pub struct Debugger {
@@ -64,60 +68,6 @@ macro_rules! find_entry_with_offset {
                 }
             })
     };
-}
-#[derive(Debug, Serialize, schemars::JsonSchema)]
-enum TypeName {
-    Name(String),
-    Ref(Box<TypeName>),
-}
-
-#[derive(Debug, Default, Serialize, schemars::JsonSchema)]
-pub struct Variable {
-    name: Option<String>,
-    type_name: Option<TypeName>,
-    value: Option<u64>,
-    file: Option<String>,
-    line: Option<u64>,
-    addr: Option<u64>,
-}
-
-#[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct DwarfAttribute {
-    name: String,
-    addr: u64,
-    tag: String,
-    attrs: Vec<String>,
-}
-
-#[derive(Debug, Serialize, schemars::JsonSchema)]
-pub enum CommandOutput {
-    Data(u64),
-    Variables(Vec<Variable>),
-    FunctionMeta(FunctionMeta),
-    CodeWindow(Vec<(u64, String, bool)>),
-    Registers(Registers),
-    DebugMeta(DebugMeta),
-    Location(Location),
-    DwarfAttributes(Vec<DwarfAttribute>),
-    Help(Vec<String>),
-    Breakpoints(Vec<Breakpoint>),
-    Backtrace(Vec<FunctionMeta>),
-    None,
-}
-
-#[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct DebugMeta {
-    file_type: String,
-    files: Vec<String>,
-    functions: i32,
-    vars: i32,
-}
-
-#[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct Location {
-    line: u64,
-    file: String,
-    column: u64,
 }
 
 impl Debugger {
@@ -417,7 +367,7 @@ impl Debugger {
             Command::GetBreakpoints => Ok(CommandOutput::Breakpoints(self.breakpoints.clone())),
             Command::DebugMeta => Ok(CommandOutput::DebugMeta(self.debug_meta()?)),
             Command::DumpDwarf => Ok(CommandOutput::DwarfAttributes(self.dump_dwarf_attrs()?)),
-            Command::Help(commands) => Ok(CommandOutput::Help(commands)),
+            Command::Help => Ok(CommandOutput::Help(CommandCompleter::default().commands)),
             Command::Backtrace => Ok(CommandOutput::Backtrace(self.backtrace()?)),
             Command::ReadVariables => Ok(CommandOutput::Variables(self.read_variables()?)),
             Command::Read(addr) => Ok(CommandOutput::Data(self.read(addr as *mut _)?)),
@@ -442,7 +392,7 @@ impl Debugger {
                 Ok(CommandOutput::Data(regs.rip))
             }
             Command::SetBreakpoint(a) => match a {
-                crate::prompt::BreakpointPoint::Name(name) => {
+                BreakpointPoint::Name(name) => {
                     let func = find_function_from_name(&self.dwarf, name)?;
                     if let Some(addr) = func.low_pc {
                         println!(
@@ -457,7 +407,7 @@ impl Debugger {
                     }
                     Ok(CommandOutput::None)
                 }
-                crate::prompt::BreakpointPoint::Address(addr) => {
+                BreakpointPoint::Address(addr) => {
                     println!("Setting breakpoint at address: {:?}", addr);
                     let mut breakpoint = Breakpoint::new(self.child, addr as *const u8)?;
                     breakpoint.enable(self.child)?;

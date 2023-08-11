@@ -23,3 +23,4 @@ object = "0.31.1"
 gimli = "0.27.3"
 env_logger = "0.10.0"
 schemars = "0.8.12"
+stackium_shared = { path = "./stackium_shared" }
