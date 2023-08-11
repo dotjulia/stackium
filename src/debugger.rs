@@ -350,6 +350,7 @@ impl Debugger {
             }
         });
         Ok(DebugMeta {
+            binary_name: self.program.to_str().unwrap().to_owned(),
             file_type: format!("{:?}", self.dwarf.file_type),
             functions,
             vars,
