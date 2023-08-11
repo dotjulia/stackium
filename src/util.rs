@@ -171,12 +171,12 @@ pub fn dw_at_to_string(attr: gimli::DwAt) -> String {
 use nix::libc::user_regs_struct;
 use stackium_shared::Registers;
 
-trait FromUserRegsStruct {
-    fn from(value: user_regs_struct) -> Registers;
+pub trait FromUserRegsStruct {
+    fn from_regs(value: user_regs_struct) -> Registers;
 }
 
 impl FromUserRegsStruct for Registers {
-    fn from(value: user_regs_struct) -> Self {
+    fn from_regs(value: user_regs_struct) -> Self {
         Registers {
             r15: value.r15,
             r14: value.r14,

@@ -1,7 +1,6 @@
 use std::num::NonZeroU64;
 
 use gimli::Reader;
-use serde::Serialize;
 use stackium_shared::FunctionMeta;
 
 use super::{error::DebugError, Location};
