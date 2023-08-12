@@ -21,6 +21,8 @@ pub fn get_function_meta<T: Reader>(
                     if let Ok(s) = dwarf.debug_str.get_str(offset)?.to_string() {
                         name = Some(s.to_string());
                     }
+                } else if let Some(str) = attr.string_value(&dwarf.debug_str) {
+                    name = Some(str.to_string().unwrap().to_string());
                 }
             }
             gimli::DW_AT_low_pc => {
@@ -54,6 +56,24 @@ pub fn get_piece_addr<T: gimli::Reader>(piece: &gimli::Piece<T>) -> Option<u64> 
         gimli::Location::Address { address } => Some(address),
         _ => None,
     }
+}
+
+pub fn get_functions<T: gimli::Reader>(
+    dwarf: &gimli::Dwarf<T>,
+) -> Result<Vec<FunctionMeta>, DebugError> {
+    let mut units = dwarf.units();
+    let mut ret_val = vec![];
+    while let Some(unit_header) = units.next()? {
+        let unit = dwarf.unit(unit_header)?;
+        let mut cursor = unit.entries();
+        while let Some((_, entry)) = cursor.next_dfs()? {
+            if entry.tag() != gimli::DW_TAG_subprogram {
+                continue;
+            }
+            ret_val.push(get_function_meta(entry, &dwarf)?);
+        }
+    }
+    Ok(ret_val)
 }
 
 pub fn find_function_from_name<T: gimli::Reader>(

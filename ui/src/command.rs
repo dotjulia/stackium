@@ -28,11 +28,13 @@ pub fn dispatch_command_and_then<T: Send>(
         Ok(response) => {
             let body = response.text();
             match body {
-                Some(body) => {
-                    let output: CommandOutput = serde_json::from_str(&body).unwrap();
-                    let output = and_then(output);
-                    sender.send(Ok(output));
-                }
+                Some(body) => match serde_json::from_str(&body) {
+                    Ok(output) => {
+                        let output = and_then(output);
+                        sender.send(Ok(output));
+                    }
+                    Err(_) => sender.send(Err(body.to_owned())),
+                },
                 None => sender.send(Err("Failed to parse response".to_string())),
             }
         }

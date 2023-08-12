@@ -13,6 +13,7 @@ impl Default for CommandCompleter {
     fn default() -> Self {
         CommandCompleter {
             commands: vec![
+                "get_functions".to_string(),
                 "location".to_string(),
                 "continue".to_string(),
                 "quit".to_string(),

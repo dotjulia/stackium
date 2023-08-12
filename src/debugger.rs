@@ -27,7 +27,7 @@ use crate::{
 use self::{
     breakpoint::DebuggerBreakpoint,
     error::DebugError,
-    util::{find_function_from_name, get_addr_from_line, get_line_from_pc},
+    util::{find_function_from_name, get_addr_from_line, get_functions, get_line_from_pc},
 };
 
 pub struct Debugger {
@@ -85,6 +85,15 @@ impl Debugger {
         let dwarf = dwarf_cow.borrow(|section| {
             gimli::EndianArcSlice::new(Arc::from(&section[..]), gimli::NativeEndian)
         });
+        let mut iter = dwarf.debug_info.units();
+        while let Some(unit) = iter.next().unwrap() {
+            let version = unit.version();
+            println!("Dwarf Version = {}", version);
+            if version != 4 {
+                eprintln!("Stackium currently only supports binaries built with dwarf debug version 4. Please compile with the \x1b[1;33m-gdwarf-4\x1b[0m flag!");
+                panic!();
+            }
+        }
         Debugger {
             child,
             program: object_file,
@@ -360,10 +369,12 @@ impl Debugger {
 
     pub fn process_command(&mut self, command: Command) -> Result<CommandOutput, DebugError> {
         match command {
+            Command::GetFunctions => Ok(CommandOutput::Functions(get_functions(&self.dwarf)?)),
             Command::WaitPid => {
                 self.waitpid_flag(Some(WaitPidFlag::WNOHANG))?;
                 Ok(CommandOutput::None)
             }
+            Command::GetFile(filename) => Ok(CommandOutput::File(fs::read_to_string(filename)?)),
             Command::GetBreakpoints => Ok(CommandOutput::Breakpoints(self.breakpoints.clone())),
             Command::DebugMeta => Ok(CommandOutput::DebugMeta(self.debug_meta()?)),
             Command::DumpDwarf => Ok(CommandOutput::DwarfAttributes(self.dump_dwarf_attrs()?)),
@@ -393,6 +404,7 @@ impl Debugger {
             }
             Command::SetBreakpoint(a) => match a {
                 BreakpointPoint::Name(name) => {
+                    println!("Name: '{}'", &name);
                     let func = find_function_from_name(&self.dwarf, name)?;
                     if let Some(addr) = func.low_pc {
                         println!(

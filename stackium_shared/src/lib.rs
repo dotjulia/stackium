@@ -48,6 +48,8 @@ pub enum CommandOutput {
     DwarfAttributes(Vec<DwarfAttribute>),
     Help(Vec<String>),
     Breakpoints(Vec<Breakpoint>),
+    Functions(Vec<FunctionMeta>),
+    File(String),
     Backtrace(Vec<FunctionMeta>),
     None,
 }
@@ -159,6 +161,10 @@ pub enum Command {
     SetBreakpoint(BreakpointPoint),
     /// Retrieve all current breakpoints
     GetBreakpoints,
+    /// Retrieve a list of all functions
+    GetFunctions,
+    /// Get source file
+    GetFile(String),
     /// For the CLI implementation
     Help,
 }
@@ -169,6 +175,7 @@ impl FromStr for Command {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut iter = s.split(" ").into_iter();
         match iter.next().ok_or("empty command".to_string())? {
+            "get_functions" => Ok(Command::GetFunctions),
             "location" => Ok(Command::Location),
             "continue" => Ok(Command::Continue),
             "waitpid" => Ok(Command::WaitPid),
