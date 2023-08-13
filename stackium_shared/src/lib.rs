@@ -164,6 +164,8 @@ pub enum Command {
     SetBreakpoint(BreakpointPoint),
     /// Retrieve all current breakpoints
     GetBreakpoints,
+    /// Deletes the breakpoint at the specified address
+    DeleteBreakpoint(u64),
     /// Retrieve a list of all functions
     GetFunctions,
     /// Get source file

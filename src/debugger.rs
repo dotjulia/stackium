@@ -225,7 +225,13 @@ impl Debugger {
                             EvaluationResult::RequiresAtLocation(_) => todo!(),
                             EvaluationResult::RequiresEntryValue(_) => todo!(),
                             EvaluationResult::RequiresParameterRef(_) => todo!(),
-                            EvaluationResult::RequiresRelocatedAddress(_) => todo!(),
+                            EvaluationResult::RequiresRelocatedAddress(addr) => {
+                                let mut iter = self.dwarf.debug_info.units();
+                                while let Ok(Some(header)) = iter.next() {
+                                    let unit = self.dwarf.unit(header);
+                                }
+                                // result = evaluation.resume_with_relocated_address()
+                            },
                             EvaluationResult::RequiresIndexedAddress { index, relocate: _ } => {
                                 let addr = self.dwarf.debug_addr.get_address(unit.header.address_size(), unit.addr_base, index)?;
                                 result = evaluation.resume_with_indexed_address(addr)?;
@@ -411,6 +417,9 @@ impl Debugger {
                             "Setting breakpoint at function: {:?} {:#x} for {:?}",
                             func.name, addr, self.child
                         );
+                        if self.breakpoints.iter().any(|b| b.address == addr) {
+                            return Err(DebugError::BreakpointInvalidState);
+                        }
                         let mut breakpoint =
                             Breakpoint::new(&self.dwarf, self.child, addr as *const u8)?;
                         breakpoint.enable(self.child)?;
@@ -422,6 +431,10 @@ impl Debugger {
                 }
                 BreakpointPoint::Address(addr) => {
                     println!("Setting breakpoint at address: {:?}", addr);
+
+                    if self.breakpoints.iter().any(|b| b.address == addr) {
+                        return Err(DebugError::BreakpointInvalidState);
+                    }
                     let mut breakpoint =
                         Breakpoint::new(&self.dwarf, self.child, addr as *const u8)?;
                     breakpoint.enable(self.child)?;
@@ -431,6 +444,10 @@ impl Debugger {
                 BreakpointPoint::Location(location) => {
                     println!("Setting a breakpoint at location: {:?}", location);
                     let addr = get_addr_from_line(&self.dwarf, location.line, location.file)?;
+
+                    if self.breakpoints.iter().any(|b| b.address == addr) {
+                        return Err(DebugError::BreakpointInvalidState);
+                    }
                     let mut breakpoint =
                         Breakpoint::new(&self.dwarf, self.child, addr as *const u8)?;
                     breakpoint.enable(self.child)?;
@@ -449,6 +466,25 @@ impl Debugger {
                 &self.dwarf,
                 self.get_pc()?,
             )?)),
+            Command::DeleteBreakpoint(address) => {
+                match self
+                    .breakpoints
+                    .iter_mut()
+                    .find(|breakpoint| breakpoint.address == address)
+                {
+                    Some(breakpoint) => {
+                        breakpoint.disable(self.child)?;
+                        self.breakpoints = self
+                            .breakpoints
+                            .iter()
+                            .filter(|b| b.address != address)
+                            .map(|b| b.clone())
+                            .collect();
+                        Ok(CommandOutput::None)
+                    }
+                    None => Err(DebugError::FunctionNotFound),
+                }
+            }
         }
     }
 

@@ -16,6 +16,7 @@ impl Default for CommandCompleter {
                 "get_functions".to_string(),
                 "location".to_string(),
                 "continue".to_string(),
+                "delete_breakpoint".to_string(),
                 "quit".to_string(),
                 "src".to_string(),
                 "get_breakpoints".to_string(),

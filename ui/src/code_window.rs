@@ -125,15 +125,26 @@ impl CodeWindow {
                         }
                     };
                     ui.label(num.to_string());
-                    code_view_ui(
-                        ui,
-                        line,
-                        &self.code_theme,
-                        match location {
-                            Some(l) => l.line == num as u64,
-                            None => false,
-                        },
-                    );
+
+                    if match location {
+                        Some(l) => l.line == num as u64,
+                        None => false,
+                    } {
+                        let (rect, _) = ui.allocate_exact_size(
+                            egui::Vec2::new(6.6 * line.len() as f32, 15.),
+                            egui::Sense::hover(),
+                        );
+                        ui.painter()
+                            .rect_filled(rect, 2., egui::Color32::LIGHT_GREEN);
+                        ui.put(rect, |ui: &mut egui::Ui| {
+                            ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
+                                code_view_ui(ui, line, &self.code_theme.clone())
+                            })
+                            .response
+                        });
+                    } else {
+                        code_view_ui(ui, line, &self.code_theme);
+                    }
                 });
             });
         }

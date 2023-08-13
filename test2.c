@@ -10,5 +10,4 @@ int main() {
     int* d = *c;
     __asm__("nop");
     __asm__("nop");
-    printf("%d %d %d", a, b, c);
 }

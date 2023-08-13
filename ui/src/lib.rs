@@ -12,4 +12,5 @@ mod location;
 mod settings_window;
 mod syntax_highlighting;
 mod toggle;
+mod variable_window;
 pub use app::StackiumApp;

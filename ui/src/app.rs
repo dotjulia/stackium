@@ -1,6 +1,6 @@
 use egui::{Align, Layout, TextureHandle};
 use poll_promise::Promise;
-use stackium_shared::{Command, CommandOutput, DebugMeta};
+use stackium_shared::{Command, CommandOutput, DebugMeta, Variable};
 use url::Url;
 
 use crate::{
@@ -12,6 +12,7 @@ use crate::{
     location::LocationWindow,
     settings_window::SettingsWindow,
     toggle::toggle_ui,
+    variable_window::VariableWindow,
 };
 
 enum State {
@@ -69,7 +70,12 @@ impl StackiumApp {
                     DebuggerWindow {
                         title: "Controls",
                         is_active: true,
-                        body: Box::from(ControlWindow::new(backend_url)),
+                        body: Box::from(ControlWindow::new(backend_url.clone())),
+                    },
+                    DebuggerWindow {
+                        title: "Variables",
+                        is_active: true,
+                        body: Box::from(VariableWindow::new(backend_url)),
                     },
                 ],
             },
