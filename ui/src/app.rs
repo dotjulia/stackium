@@ -9,6 +9,7 @@ use crate::{
     command::dispatch,
     debugger_window::{DebuggerWindow, Metadata},
     location::LocationWindow,
+    settings_window::SettingsWindow,
     toggle::toggle_ui,
 };
 
@@ -39,7 +40,7 @@ impl StackiumApp {
                 windows: vec![
                     DebuggerWindow {
                         title: "Metadata",
-                        is_active: true,
+                        is_active: false,
                         body: Box::from(Metadata::new(backend_url.clone())),
                     },
                     DebuggerWindow {
@@ -54,8 +55,13 @@ impl StackiumApp {
                     },
                     DebuggerWindow {
                         title: "Code",
-                        is_active: false,
+                        is_active: true,
                         body: Box::from(CodeWindow::new(backend_url)),
+                    },
+                    DebuggerWindow {
+                        title: "Settings",
+                        is_active: false,
+                        body: Box::from(SettingsWindow::new()),
                     },
                 ],
             },
@@ -70,7 +76,18 @@ impl eframe::App for StackiumApp {
         }
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        if let State::Debugging {
+            backend_url: _,
+            metadata: _,
+            windows,
+        } = &mut self.state
+        {
+            for window in windows {
+                window.body.update(ctx, frame);
+            }
+        }
+
         egui::TopBottomPanel::bottom("debug warning").show(ctx, |ui| {
             egui::warn_if_debug_build(ui);
         });
@@ -81,7 +98,7 @@ impl eframe::App for StackiumApp {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Quit").clicked() {
-                        _frame.close();
+                        frame.close();
                     }
                 });
             });

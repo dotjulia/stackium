@@ -3,17 +3,26 @@ use std::ffi::c_void;
 use nix::{sys::ptrace, unistd::Pid};
 use stackium_shared::Breakpoint;
 
-use super::error::DebugError;
+use super::{error::DebugError, util::get_line_from_pc};
 
 pub trait DebuggerBreakpoint {
-    fn new(child: Pid, address: *const u8) -> Result<Breakpoint, DebugError>;
+    fn new<T: gimli::Reader>(
+        dwarf: &gimli::Dwarf<T>,
+        child: Pid,
+        address: *const u8,
+    ) -> Result<Breakpoint, DebugError>;
     fn replace_byte(&self, child: Pid, byte: u8) -> Result<(), DebugError>;
     fn enable(&mut self, child: Pid) -> Result<(), DebugError>;
     fn disable(&mut self, child: Pid) -> Result<(), DebugError>;
 }
 
 impl DebuggerBreakpoint for Breakpoint {
-    fn new(child: Pid, address: *const u8) -> Result<Self, DebugError> {
+    fn new<T: gimli::Reader>(
+        dwarf: &gimli::Dwarf<T>,
+        child: Pid,
+        address: *const u8,
+    ) -> Result<Self, DebugError> {
+        let location = get_line_from_pc(dwarf, address as u64)?;
         Ok(Self {
             address: address as u64,
             original_byte: match ptrace::read(child, address as *mut _) {
@@ -24,6 +33,7 @@ impl DebuggerBreakpoint for Breakpoint {
                 }
             },
             enabled: false,
+            location,
         })
     }
 

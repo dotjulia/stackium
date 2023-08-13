@@ -411,7 +411,8 @@ impl Debugger {
                             "Setting breakpoint at function: {:?} {:#x} for {:?}",
                             func.name, addr, self.child
                         );
-                        let mut breakpoint = Breakpoint::new(self.child, addr as *const u8)?;
+                        let mut breakpoint =
+                            Breakpoint::new(&self.dwarf, self.child, addr as *const u8)?;
                         breakpoint.enable(self.child)?;
                         self.breakpoints.push(breakpoint);
                     } else {
@@ -421,7 +422,17 @@ impl Debugger {
                 }
                 BreakpointPoint::Address(addr) => {
                     println!("Setting breakpoint at address: {:?}", addr);
-                    let mut breakpoint = Breakpoint::new(self.child, addr as *const u8)?;
+                    let mut breakpoint =
+                        Breakpoint::new(&self.dwarf, self.child, addr as *const u8)?;
+                    breakpoint.enable(self.child)?;
+                    self.breakpoints.push(breakpoint);
+                    Ok(CommandOutput::None)
+                }
+                BreakpointPoint::Location(location) => {
+                    println!("Setting a breakpoint at location: {:?}", location);
+                    let addr = get_addr_from_line(&self.dwarf, location.line, location.file)?;
+                    let mut breakpoint =
+                        Breakpoint::new(&self.dwarf, self.child, addr as *const u8)?;
                     breakpoint.enable(self.child)?;
                     self.breakpoints.push(breakpoint);
                     Ok(CommandOutput::None)
@@ -496,7 +507,7 @@ impl Debugger {
             .map(|(i, _)| i)
             .collect();
         if bp.len() == 0 {
-            let mut breakpoint = Breakpoint::new(self.child, ra as *const u8)?;
+            let mut breakpoint = Breakpoint::new(&self.dwarf, self.child, ra as *const u8)?;
             breakpoint.enable(self.child)?;
             self.continue_exec()?;
             breakpoint.disable(self.child)?;

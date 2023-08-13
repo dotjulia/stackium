@@ -13,6 +13,7 @@ pub trait DebuggerWindowImpl {
     /// widget changed the debug state significantly
     fn ui(&mut self, ui: &mut egui::Ui) -> (bool, egui::Response);
     fn dirty(&mut self) {}
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {}
 }
 
 pub struct Metadata {

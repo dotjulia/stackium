@@ -69,7 +69,7 @@ pub struct DebugMeta {
     pub vars: i32,
 }
 
-#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, Clone)]
 pub struct Location {
     pub line: u64,
     pub file: String,
@@ -107,6 +107,7 @@ pub struct Breakpoint {
     pub address: u64,
     pub original_byte: u8,
     pub enabled: bool,
+    pub location: Location,
 }
 
 /// Specifies a location for a breakpoint
@@ -116,6 +117,8 @@ pub enum BreakpointPoint {
     Name(String),
     /// At the specified address
     Address(u64),
+    /// At the specified location (ignores column)
+    Location(Location),
 }
 
 /// A command for the debugger to execute
