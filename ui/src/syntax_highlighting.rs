@@ -1,7 +1,7 @@
 use egui::text::LayoutJob;
 
 /// View some code with syntax highlighting and selection.
-pub fn code_view_ui(ui: &mut egui::Ui, mut code: &str, theme: &CodeTheme) {
+pub fn code_view_ui(ui: &mut egui::Ui, mut code: &str, theme: &CodeTheme, is_active: bool) {
     let language = "c";
 
     let mut layouter = |ui: &egui::Ui, string: &str, _wrap_width: f32| {

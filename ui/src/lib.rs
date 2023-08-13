@@ -5,6 +5,7 @@ mod app;
 mod command;
 mod breakpoint_window;
 mod code_window;
+mod control_window;
 mod debugger_window;
 mod frame_history;
 mod location;

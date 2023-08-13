@@ -1,4 +1,4 @@
-use egui::{Align, Layout};
+use egui::{Align, Layout, TextureHandle};
 use poll_promise::Promise;
 use stackium_shared::{Command, CommandOutput, DebugMeta};
 use url::Url;
@@ -7,6 +7,7 @@ use crate::{
     breakpoint_window::BreakpointWindow,
     code_window::CodeWindow,
     command::dispatch,
+    control_window::ControlWindow,
     debugger_window::{DebuggerWindow, Metadata},
     location::LocationWindow,
     settings_window::SettingsWindow,
@@ -18,6 +19,7 @@ enum State {
         backend_url: Url,
         metadata: Promise<Result<DebugMeta, String>>,
         windows: Vec<DebuggerWindow>,
+        icon: Option<TextureHandle>,
     },
     UnrecoverableFailure {
         message: String,
@@ -35,6 +37,7 @@ impl StackiumApp {
         Self {
             next_state: None,
             state: State::Debugging {
+                icon: None,
                 backend_url: backend_url.clone(),
                 metadata: { dispatch!(backend_url.clone(), Command::DebugMeta, DebugMeta) },
                 windows: vec![
@@ -56,12 +59,17 @@ impl StackiumApp {
                     DebuggerWindow {
                         title: "Code",
                         is_active: true,
-                        body: Box::from(CodeWindow::new(backend_url)),
+                        body: Box::from(CodeWindow::new(backend_url.clone())),
                     },
                     DebuggerWindow {
                         title: "Settings",
                         is_active: false,
                         body: Box::from(SettingsWindow::new()),
+                    },
+                    DebuggerWindow {
+                        title: "Controls",
+                        is_active: true,
+                        body: Box::from(ControlWindow::new(backend_url)),
                     },
                 ],
             },
@@ -81,6 +89,7 @@ impl eframe::App for StackiumApp {
             backend_url: _,
             metadata: _,
             windows,
+            icon: _,
         } = &mut self.state
         {
             for window in windows {
@@ -109,8 +118,25 @@ impl eframe::App for StackiumApp {
                 backend_url: _,
                 metadata,
                 windows,
+                icon,
             } => {
                 egui::SidePanel::left("side_pabel").show(ctx, |ui| {
+                    let texture = icon.get_or_insert_with(|| {
+                        let icon = include_bytes!("../assets/icon-1024.png");
+                        let image = match load_image_from_memory(icon) {
+                            Ok(image) => image,
+                            Err(_) => egui::ColorImage::example(),
+                        };
+                        ui.ctx()
+                            .load_texture("icon-1024", image, Default::default())
+                    });
+
+                    ui.with_layout(Layout::top_down(Align::Center), |ui| {
+                        ui.add_space(10.);
+                        ui.image(&mut texture.clone(), egui::Vec2::new(100., 100.));
+                        ui.heading("Stackium");
+                        ui.add_space(20.);
+                    });
                     ui.heading("Windows");
                     for window in windows.iter_mut() {
                         ui.horizontal(|ui| {
@@ -129,8 +155,9 @@ impl eframe::App for StackiumApp {
                     }
                     ui.with_layout(Layout::bottom_up(Align::LEFT), |ui| {
                         ui.horizontal(|ui| {
+                            ui.image(texture, egui::Vec2::new(20., 20.));
                             ui.hyperlink_to(
-                                format!("{} Stackium", egui::special_emojis::GITHUB),
+                                format!("Stackium {}", egui::special_emojis::GITHUB),
                                 "https://github.com/dotjulia/stackium",
                             );
                             ui.label("made with ♥ by");
@@ -181,4 +208,15 @@ impl eframe::App for StackiumApp {
             }
         }
     }
+}
+
+fn load_image_from_memory(image_data: &[u8]) -> Result<egui::ColorImage, image::ImageError> {
+    let image = image::load_from_memory(image_data)?;
+    let size = [image.width() as _, image.height() as _];
+    let image_buffer = image.to_rgba8();
+    let pixels = image_buffer.as_flat_samples();
+    Ok(egui::ColorImage::from_rgba_unmultiplied(
+        size,
+        pixels.as_slice(),
+    ))
 }

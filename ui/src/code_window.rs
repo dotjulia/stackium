@@ -18,6 +18,7 @@ pub struct CodeWindow {
     breakpoints: Promise<Result<Vec<Breakpoint>, String>>,
     code_theme: CodeTheme,
     create_breakpoint_request: Option<Promise<Result<(), String>>>,
+    location: Promise<Result<Location, String>>,
 }
 
 impl CodeWindow {
@@ -31,6 +32,7 @@ impl CodeWindow {
             code_theme: Default::default(),
             breakpoints: Promise::from_ready(Err(String::new())),
             create_breakpoint_request: None,
+            location: Promise::from_ready(Err(String::new())),
         };
         s.dirty();
         s
@@ -60,6 +62,13 @@ impl CodeWindow {
     }
     fn render_code(&mut self, ui: &mut egui::Ui, code: &String) -> bool {
         ui.add_space(2. * ui.spacing().item_spacing.y);
+        let location = match self.location.ready() {
+            Some(l) => match l {
+                Ok(l) => Some(l),
+                Err(_) => None,
+            },
+            None => None,
+        };
         for (num, line) in code.lines().enumerate() {
             let num = num + 1;
             ui.vertical(|ui| {
@@ -69,27 +78,42 @@ impl CodeWindow {
                     match self.breakpoints.ready() {
                         Some(breakpoints) => match breakpoints {
                             Ok(breakpoints) => {
-                                if Self::render_breakpoint(
-                                    ui,
-                                    breakpoints.iter().any(|bp| {
-                                        bp.location.file == self.displaying_file
-                                            && bp.location.line == num as u64
-                                    }),
-                                )
-                                .clicked()
-                                {
-                                    self.create_breakpoint_request =
-                                        Some(dispatch_command_and_then(
-                                            self.backend_url.clone(),
-                                            Command::SetBreakpoint(BreakpointPoint::Location(
-                                                Location {
-                                                    line: num as u64,
-                                                    file: self.displaying_file.clone(),
-                                                    column: 0,
-                                                },
-                                            )),
-                                            |_| {},
-                                        ));
+                                let is_on = breakpoints.iter().any(|bp| {
+                                    bp.location.file == self.displaying_file
+                                        && bp.location.line == num as u64
+                                });
+                                if Self::render_breakpoint(ui, is_on).clicked() {
+                                    if is_on {
+                                        self.create_breakpoint_request =
+                                            Some(dispatch_command_and_then(
+                                                self.backend_url.clone(),
+                                                Command::DeleteBreakpoint(
+                                                    breakpoints
+                                                        .iter()
+                                                        .find(|b| {
+                                                            b.location.line == num as u64
+                                                                && b.location.file
+                                                                    == self.displaying_file
+                                                        })
+                                                        .unwrap()
+                                                        .address,
+                                                ),
+                                                |_| {},
+                                            ));
+                                    } else {
+                                        self.create_breakpoint_request =
+                                            Some(dispatch_command_and_then(
+                                                self.backend_url.clone(),
+                                                Command::SetBreakpoint(BreakpointPoint::Location(
+                                                    Location {
+                                                        line: num as u64,
+                                                        file: self.displaying_file.clone(),
+                                                        column: 0,
+                                                    },
+                                                )),
+                                                |_| {},
+                                            ));
+                                    }
                                 };
                             }
                             Err(_) => {
@@ -97,15 +121,43 @@ impl CodeWindow {
                             }
                         },
                         None => {
-                            ui.spinner();
+                            Self::render_breakpoint(ui, false);
                         }
                     };
                     ui.label(num.to_string());
-                    code_view_ui(ui, line, &self.code_theme);
+                    code_view_ui(
+                        ui,
+                        line,
+                        &self.code_theme,
+                        match location {
+                            Some(l) => l.line == num as u64,
+                            None => false,
+                        },
+                    );
                 });
             });
         }
-        false
+
+        let mut dirty = false;
+        match &self.create_breakpoint_request {
+            Some(req) => match req.ready() {
+                Some(req) => match req {
+                    Ok(_) => {
+                        dirty = true;
+                    }
+                    Err(_) => {}
+                },
+                None => {
+                    ui.spinner();
+                }
+            },
+            None => {}
+        };
+        if dirty {
+            self.create_breakpoint_request = None;
+        }
+
+        dirty
     }
 }
 
@@ -137,6 +189,7 @@ impl DebuggerWindowImpl for CodeWindow {
             Command::GetBreakpoints,
             Breakpoints
         );
+        self.location = dispatch!(self.backend_url.clone(), Command::Location, Location);
     }
     fn ui(&mut self, ui: &mut egui::Ui) -> (bool, egui::Response) {
         match self.files.ready() {

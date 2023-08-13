@@ -59,7 +59,13 @@ impl DebuggerWindowImpl for BreakpointWindow {
                     ui.heading("Breakpoints");
                     for breakpoint in breakpoints.iter() {
                         ui.horizontal(|ui| {
-                            ui.label(format!("{:#x}", breakpoint.address));
+                            ui.label(format!(
+                                "{} {}:{} @ {:#x}",
+                                breakpoint.location.file,
+                                breakpoint.location.line,
+                                breakpoint.location.column,
+                                breakpoint.address
+                            ));
                             if ui
                                 .button(if breakpoint.enabled {
                                     "disable"
@@ -68,7 +74,11 @@ impl DebuggerWindowImpl for BreakpointWindow {
                                 })
                                 .clicked()
                             {
-                                // send disable request
+                                self.adding_breakpoint_req = Some(dispatch_command_and_then(
+                                    self.backend_url.clone(),
+                                    Command::DeleteBreakpoint(breakpoint.address),
+                                    |_| {},
+                                ));
                             }
                         });
                     }
