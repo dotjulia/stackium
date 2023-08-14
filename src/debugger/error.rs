@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, str::Utf8Error};
 
 #[derive(Debug)]
 pub enum DebugError {
@@ -14,6 +14,13 @@ pub enum DebugError {
     InvalidPC(u64),
     InvalidCommand(String),
     InvalidArgument(String),
+    EncodingError(String),
+}
+
+impl From<Utf8Error> for DebugError {
+    fn from(value: Utf8Error) -> Self {
+        DebugError::EncodingError(value.to_string())
+    }
 }
 
 impl From<gimli::Error> for DebugError {

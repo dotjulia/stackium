@@ -1,9 +1,12 @@
 use egui::{text::LayoutJob, Response};
 
 /// View some code with syntax highlighting and selection.
-pub fn code_view_ui(ui: &mut egui::Ui, mut code: &str, theme: &CodeTheme) -> Response {
-    let language = "c";
-
+pub fn code_view_ui(
+    ui: &mut egui::Ui,
+    mut code: &str,
+    theme: &CodeTheme,
+    language: &str,
+) -> Response {
     let mut layouter = |ui: &egui::Ui, string: &str, _wrap_width: f32| {
         let layout_job = highlight(ui.ctx(), &theme, string, language);
         // layout_job.wrap.max_width = wrap_width; // no wrapping

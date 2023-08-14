@@ -170,6 +170,8 @@ pub enum Command {
     GetFunctions,
     /// Get source file
     GetFile(String),
+    /// Get the disassembly of the binary using objdump
+    Disassemble,
     /// For the CLI implementation
     Help,
 }
@@ -184,6 +186,7 @@ impl FromStr for Command {
             "location" => Ok(Command::Location),
             "continue" => Ok(Command::Continue),
             "waitpid" => Ok(Command::WaitPid),
+            "disassemble" => Ok(Command::Disassemble),
             "get_breakpoints" => Ok(Command::GetBreakpoints),
             "quit" => Ok(Command::Quit),
             "get_registers" => Ok(Command::GetRegister),

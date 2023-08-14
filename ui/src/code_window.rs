@@ -1,4 +1,4 @@
-use egui::{CollapsingHeader, ComboBox, RichText};
+use egui::{CollapsingHeader, ComboBox, RichText, ScrollArea};
 use poll_promise::Promise;
 use stackium_shared::{Breakpoint, BreakpointPoint, Command, CommandOutput, Location};
 use url::Url;
@@ -8,6 +8,12 @@ use crate::{
     debugger_window::DebuggerWindowImpl,
     syntax_highlighting::{code_view_ui, CodeTheme},
 };
+
+#[derive(PartialEq)]
+enum Selected {
+    Code,
+    Disassemble,
+}
 
 pub struct CodeWindow {
     backend_url: Url,
@@ -19,6 +25,9 @@ pub struct CodeWindow {
     code_theme: CodeTheme,
     create_breakpoint_request: Option<Promise<Result<(), String>>>,
     location: Promise<Result<Location, String>>,
+    disassembly: Promise<Result<String, String>>,
+    selected_window: Selected,
+    pc: Promise<Result<u64, String>>,
 }
 
 impl CodeWindow {
@@ -33,6 +42,9 @@ impl CodeWindow {
             breakpoints: Promise::from_ready(Err(String::new())),
             create_breakpoint_request: None,
             location: Promise::from_ready(Err(String::new())),
+            disassembly: dispatch!(backend_url, Command::Disassemble, File),
+            selected_window: Selected::Code,
+            pc: Promise::from_ready(Ok(0)),
         };
         s.dirty();
         s
@@ -59,6 +71,110 @@ impl CodeWindow {
             }
         }
         response
+    }
+    fn render_disassembly(&mut self, ui: &mut egui::Ui, disassembly: String) -> bool {
+        let mut dirty = false;
+        ui.horizontal(|ui| {
+            ui.label("Program Counter: ");
+            match self.pc.ready() {
+                Some(pc) => match pc {
+                    Ok(pc) => ui.label(format!("{:#x?}", pc)),
+                    Err(e) => ui.label(e),
+                },
+                None => ui.spinner(),
+            }
+        });
+        ScrollArea::both()
+            .auto_shrink([false; 2])
+            .max_height(400.)
+            .show_viewport(ui, |ui, _| {
+                ui.set_height(30.);
+                // ui.style_mut().wrap = Some(false);
+                ui.vertical(|ui| {
+                    ui.add_space(2. * ui.spacing().item_spacing.y);
+                    for line in disassembly.lines() {
+                        ui.add_space(-2. * ui.spacing().item_spacing.y);
+                        ui.horizontal(|ui| {
+                            let current_address =
+                                line.split("\t").next().unwrap_or("").replace(":", "");
+                            let current_address = current_address.trim();
+                            let current_address =
+                                u64::from_str_radix(&current_address, 16).unwrap_or(0);
+                            match self.pc.ready() {
+                                Some(pc) => match pc {
+                                    Ok(pc) => {
+                                        let is_current = current_address == *pc;
+                                        match self.breakpoints.ready() {
+                                            Some(breakpoints) => match breakpoints {
+                                                Ok(breakpoints) => {
+                                                    let has_breakpoint = breakpoints
+                                                        .iter()
+                                                        .any(|b| b.address == current_address);
+                                                    if  has_breakpoint {
+                                                        if Self::render_breakpoint(ui, true).clicked() {
+                                                            self.create_breakpoint_request = Some(dispatch_command_and_then(self.backend_url.clone(), Command::DeleteBreakpoint(current_address), |_| {}));
+                                                            dirty = true;
+                                                        }
+                                                    } else {
+                                                        if Self::render_breakpoint(ui, false)
+                                                            .clicked()
+                                                        {
+                                                            self.create_breakpoint_request = Some(dispatch_command_and_then(self.backend_url.clone(), Command::SetBreakpoint(BreakpointPoint::Address(current_address)), |_| {}));
+                                                            dirty = true;
+                                                        }
+                                                    }
+                                                }
+                                                Err(_) => {}
+                                            },
+                                            None => {}
+                                        };
+
+                                        if is_current {
+                                            let (rect, _) = ui.allocate_exact_size(
+                                                egui::Vec2::new(7. * line.len() as f32, 15.),
+                                                egui::Sense::hover(),
+                                            );
+                                            ui.painter().rect_filled(
+                                                rect,
+                                                2.,
+                                                egui::Color32::LIGHT_GREEN,
+                                            );
+                                            ui.put(rect, |ui: &mut egui::Ui| {
+                                                ui.with_layout(
+                                                    egui::Layout::left_to_right(egui::Align::Min),
+                                                    |ui| {
+                                                        code_view_ui(
+                                                            ui,
+                                                            line,
+                                                            &self.code_theme.clone(),
+                                                            "asm"
+                                                        )
+                                                    },
+                                                )
+                                                .response
+                                            });
+                                        } else {
+                                            code_view_ui(
+                                                ui,
+                                                &mut line.to_owned(),
+                                                &self.code_theme,
+                                                "asm"
+                                            );
+                                        }
+                                    }
+                                    Err(_) => {
+                                        ui.spinner();
+                                    }
+                                },
+                                None => {
+                                    ui.spinner();
+                                }
+                            };
+                        });
+                    }
+                });
+            });
+        dirty
     }
     fn render_code(&mut self, ui: &mut egui::Ui, code: &String) -> bool {
         ui.add_space(2. * ui.spacing().item_spacing.y);
@@ -138,12 +254,12 @@ impl CodeWindow {
                             .rect_filled(rect, 2., egui::Color32::LIGHT_GREEN);
                         ui.put(rect, |ui: &mut egui::Ui| {
                             ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
-                                code_view_ui(ui, line, &self.code_theme.clone())
+                                code_view_ui(ui, line, &self.code_theme.clone(), "c")
                             })
                             .response
                         });
                     } else {
-                        code_view_ui(ui, line, &self.code_theme);
+                        code_view_ui(ui, line, &self.code_theme, "c");
                     }
                 });
             });
@@ -201,43 +317,80 @@ impl DebuggerWindowImpl for CodeWindow {
             Breakpoints
         );
         self.location = dispatch!(self.backend_url.clone(), Command::Location, Location);
+        self.pc = dispatch_command_and_then(
+            self.backend_url.clone(),
+            Command::ProgramCounter,
+            |o| match o {
+                CommandOutput::Data(o) => o,
+                _ => unreachable!(),
+            },
+        );
     }
     fn ui(&mut self, ui: &mut egui::Ui) -> (bool, egui::Response) {
-        match self.files.ready() {
-            Some(files) => match files {
-                Ok(files) => {
-                    if files.len() > 0 && self.selected_file.len() == 0 {
-                        self.selected_file = files.first().unwrap().clone();
-                    }
-                    ComboBox::from_label("File")
-                        .selected_text(self.selected_file.clone())
-                        .show_ui(ui, |ui| {
-                            for file in files {
-                                ui.selectable_value(&mut self.selected_file, file.clone(), file);
-                            }
-                        });
-                }
-                Err(err) => {
-                    ui.label(err);
-                }
-            },
-            None => {
-                ui.spinner();
-            }
-        }
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut self.selected_window, Selected::Code, "Code");
+            ui.selectable_value(
+                &mut self.selected_window,
+                Selected::Disassemble,
+                "Disassemble",
+            );
+        });
         let mut dirty = false;
-        match self.file.ready() {
-            Some(code) => match code {
-                Ok(code) => {
-                    let code = code.clone();
-                    dirty = self.render_code(ui, &code);
+        if self.selected_window == Selected::Code {
+            match self.files.ready() {
+                Some(files) => match files {
+                    Ok(files) => {
+                        if files.len() > 0 && self.selected_file.len() == 0 {
+                            self.selected_file = files.first().unwrap().clone();
+                        }
+                        ComboBox::from_label("File")
+                            .selected_text(self.selected_file.clone())
+                            .show_ui(ui, |ui| {
+                                for file in files {
+                                    ui.selectable_value(
+                                        &mut self.selected_file,
+                                        file.clone(),
+                                        file,
+                                    );
+                                }
+                            });
+                    }
+                    Err(err) => {
+                        ui.label(err);
+                    }
+                },
+                None => {
+                    ui.spinner();
                 }
-                Err(err) => {
-                    ui.label(err);
+            }
+            match self.file.ready() {
+                Some(code) => match code {
+                    Ok(code) => {
+                        let code = code.clone();
+                        dirty = self.render_code(ui, &code);
+                    }
+                    Err(err) => {
+                        ui.label(err);
+                    }
+                },
+                None => {
+                    ui.spinner();
                 }
-            },
-            None => {
-                ui.spinner();
+            }
+        } else {
+            match self.disassembly.ready() {
+                Some(disassembly) => match disassembly {
+                    Ok(disassembly) => {
+                        let disassembly = disassembly.clone();
+                        dirty = self.render_disassembly(ui, disassembly);
+                    }
+                    Err(err) => {
+                        ui.label(err);
+                    }
+                },
+                None => {
+                    ui.spinner();
+                }
             }
         }
 

@@ -230,6 +230,7 @@ impl Debugger {
                                 while let Ok(Some(header)) = iter.next() {
                                     let unit = self.dwarf.unit(header);
                                 }
+                                todo!()
                                 // result = evaluation.resume_with_relocated_address()
                             },
                             EvaluationResult::RequiresIndexedAddress { index, relocate: _ } => {
@@ -375,6 +376,16 @@ impl Debugger {
 
     pub fn process_command(&mut self, command: Command) -> Result<CommandOutput, DebugError> {
         match command {
+            Command::Disassemble => Ok(CommandOutput::File(
+                std::str::from_utf8(
+                    &std::process::Command::new("objdump")
+                        .arg("--disassemble")
+                        .arg(self.program.clone().into_os_string())
+                        .output()?
+                        .stdout,
+                )?
+                .to_string(),
+            )),
             Command::GetFunctions => Ok(CommandOutput::Functions(get_functions(&self.dwarf)?)),
             Command::WaitPid => {
                 self.waitpid_flag(Some(WaitPidFlag::WNOHANG))?;
