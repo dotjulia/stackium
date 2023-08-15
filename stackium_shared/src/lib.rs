@@ -54,10 +54,19 @@ pub enum CommandOutput {
     None,
 }
 
-#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, Clone)]
 pub enum TypeName {
     Name(String),
     Ref(Box<TypeName>),
+}
+
+impl ToString for TypeName {
+    fn to_string(&self) -> String {
+        match self {
+            TypeName::Name(name) => name.clone(),
+            TypeName::Ref(reference) => format!("&{}", reference.to_string()),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -76,7 +85,7 @@ pub struct Location {
     pub column: u64,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Default, Serialize, Deserialize, schemars::JsonSchema, Clone)]
 pub struct Variable {
     pub name: Option<String>,
     pub type_name: Option<TypeName>,
