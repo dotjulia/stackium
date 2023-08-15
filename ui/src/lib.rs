@@ -14,3 +14,15 @@ mod syntax_highlighting;
 mod toggle;
 mod variable_window;
 pub use app::StackiumApp;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn start_ui() -> eframe::Result<()> {
+    env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
+
+    let native_options = eframe::NativeOptions::default();
+    eframe::run_native(
+        "eframe template",
+        native_options,
+        Box::new(|cc| Box::new(crate::StackiumApp::new(cc))),
+    )
+}

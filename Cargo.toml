@@ -24,5 +24,6 @@ gimli = "0.27.3"
 env_logger = "0.10.0"
 schemars = "0.8.12"
 stackium_shared = { path = "./stackium_shared" }
+stackium_ui = { path = "./ui" }
 include_dir = "0.7.3"
 mime_guess = "2.0.4"

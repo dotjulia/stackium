@@ -36,6 +36,8 @@ enum DebugInterfaceMode {
     CLI,
     #[cfg(feature = "web")]
     Web,
+    #[cfg(feature = "web")]
+    Gui,
 }
 
 #[derive(Parser, Debug)]
@@ -103,5 +105,22 @@ fn main() -> Result<(), DebugError> {
         DebugInterfaceMode::CLI => debugger.debug_loop(),
         #[cfg(feature = "web")]
         DebugInterfaceMode::Web => start_webserver(debugger),
+        #[cfg(feature = "web")]
+        DebugInterfaceMode::Gui => match unsafe { fork() } {
+            Ok(fr) => match fr {
+                Parent { child: _ } => start_webserver(debugger),
+                Child => {
+                    match stackium_ui::start_ui() {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("{:?}", e);
+                            panic!();
+                        }
+                    }
+                    Ok(())
+                }
+            },
+            Err(e) => Err(DebugError::NixError(e)),
+        },
     }
 }
