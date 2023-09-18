@@ -10,6 +10,7 @@ use crate::{
     control_window::ControlWindow,
     debugger_window::{DebuggerWindow, Metadata},
     location::LocationWindow,
+    register_window::RegisterWindow,
     settings_window::SettingsWindow,
     toggle::toggle_ui,
     variable_window::VariableWindow,
@@ -75,7 +76,12 @@ impl StackiumApp {
                     DebuggerWindow {
                         title: "Variables",
                         is_active: true,
-                        body: Box::from(VariableWindow::new(backend_url)),
+                        body: Box::from(VariableWindow::new(backend_url.clone())),
+                    },
+                    DebuggerWindow {
+                        title: "Registers",
+                        is_active: false,
+                        body: Box::from(RegisterWindow::new(backend_url)),
                     },
                 ],
             },

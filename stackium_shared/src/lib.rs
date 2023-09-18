@@ -39,6 +39,7 @@ pub struct Registers {
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub enum CommandOutput {
     Data(u64),
+    Memory(Vec<u8>),
     Variables(Vec<Variable>),
     FunctionMeta(FunctionMeta),
     CodeWindow(Vec<(u64, String, bool)>),
@@ -64,7 +65,7 @@ impl ToString for TypeName {
     fn to_string(&self) -> String {
         match self {
             TypeName::Name(name) => name.clone(),
-            TypeName::Ref(reference) => format!("&{}", reference.to_string()),
+            TypeName::Ref(reference) => format!("{}&", reference.to_string()),
         }
     }
 }
@@ -93,6 +94,8 @@ pub struct Variable {
     pub file: Option<String>,
     pub line: Option<u64>,
     pub addr: Option<u64>,
+    pub high_pc: u64,
+    pub low_pc: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -147,6 +150,8 @@ pub enum Command {
     FindFunc(String),
     /// Read from the specified address
     Read(u64),
+    /// Read memory specifying the address and the length in bytes
+    ReadMemory(u64, u64),
     /// Returns the address of the current instruction
     ProgramCounter,
     /// Provides statistics of the current program

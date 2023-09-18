@@ -200,8 +200,27 @@ impl Debugger {
         let mut sub_entry;
         let mut unit;
         let mut variables = Vec::new();
+        let mut curr_high_pc = 0u64;
+        let mut curr_low_pc = 0u64;
         iter_every_entry!(self, sub_entry unit | {
-            if sub_entry.tag() == gimli::DW_TAG_variable {
+            // println!("{:#?}", tag_to_string(sub_entry.tag()));
+            if sub_entry.tag() == gimli::DW_TAG_subprogram || sub_entry.tag() == gimli::DW_TAG_lexical_block{
+
+                if let Ok(Some(lpc)) = sub_entry.attr_value(gimli::DW_AT_low_pc) {
+                    match lpc {
+                        gimli::AttributeValue::Addr(addr) => {
+                            curr_low_pc = addr;
+                        },
+                        _ => { println!("unexpected low pc value: {:#?}", lpc); }
+                    }
+                }
+
+                if let Ok(Some(hpc)) = sub_entry.attr_value(gimli::DW_AT_high_pc) {
+                    curr_high_pc = curr_low_pc + hpc.udata_value().unwrap_or(0);
+                }
+
+            }
+            if sub_entry.tag() == gimli::DW_TAG_variable || sub_entry.tag() == gimli::DW_TAG_formal_parameter {
                 let mut var = Variable::default();
                 if let Some(location) = sub_entry.attr_value(gimli::DW_AT_location)? {
                     let location = location.exprloc_value().unwrap();
@@ -263,6 +282,8 @@ impl Debugger {
                         var.line = Some(line as u64);
                     }
                 }
+                var.high_pc = curr_high_pc;
+                var.low_pc = curr_low_pc;
                 variables.push(var);
             }
         });
@@ -386,6 +407,9 @@ impl Debugger {
                 )?
                 .to_string(),
             )),
+            Command::ReadMemory(addr, size) => {
+                Ok(CommandOutput::Memory(self.read_memory(addr, size)?))
+            }
             Command::GetFunctions => Ok(CommandOutput::Functions(get_functions(&self.dwarf)?)),
             Command::WaitPid => {
                 self.waitpid_flag(Some(WaitPidFlag::WNOHANG))?;
@@ -519,6 +543,16 @@ impl Debugger {
             Ok(d) => Ok(d as u64),
             Err(e) => Err(DebugError::NixError(e)),
         }
+    }
+
+    fn read_memory(&self, addr: u64, len: u64) -> Result<Vec<u8>, DebugError> {
+        let mut values = vec![];
+        println!("Reading @ {:#x} : {}", addr, len);
+        for i in 0..len {
+            let v = ptrace::read(self.child, (addr + i as u64) as *mut c_void)?;
+            values.push((v & 0xFF) as u8);
+        }
+        Ok(values)
     }
 
     fn get_pc(&self) -> Result<u64, DebugError> {
