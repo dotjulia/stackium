@@ -80,7 +80,7 @@ impl ToString for TypeName {
     fn to_string(&self) -> String {
         match self {
             TypeName::Name { name, byte_size: _ } => name.clone(),
-            TypeName::Ref(reference) => format!("{}&", reference.to_string()),
+            TypeName::Ref(reference) => format!("{}*", reference.to_string()),
             TypeName::Arr {
                 arr_type,
                 count: length,
@@ -91,9 +91,16 @@ impl ToString for TypeName {
                 byte_size: _,
             } => {
                 name.clone()
-                    + " = "
-                    + &prod.iter().fold("{ ".to_owned(), |sum, e| {
-                        sum + "." + &e.0 + " = " + &e.1.to_string() + " "
+                    + ": "
+                    + &prod.iter().fold("{ \n".to_owned(), |sum, e| {
+                        sum + "  ."
+                            + &e.0
+                            + " = "
+                            + &e.1
+                                .to_string()
+                                .lines()
+                                .map(|l| "  ".to_owned() + l + "\n")
+                                .collect::<String>()
                     })
                     + " } "
             }

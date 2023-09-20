@@ -163,8 +163,12 @@ impl Debugger {
                             }
                             gimli::DW_TAG_pointer_type => {
                                 if let Ok(Some(type_field)) = node.entry().attr(gimli::DW_AT_type) {
-                                    let sub_type = debugger.decode_type(type_field.value())?;
-                                    return Ok(Some(TypeName::Ref(Box::from(sub_type))));
+                                    //TODO: Find fix for self referential structs
+                                    // let sub_type = debugger.decode_type(type_field.value())?;
+                                    return Ok(Some(TypeName::Ref(Box::from(TypeName::Name {
+                                        name: "*".to_owned(),
+                                        byte_size: 0,
+                                    }))));
                                 } else {
                                     return Ok(Some(TypeName::Ref(Box::from(TypeName::Name {
                                         name: "void".to_owned(),

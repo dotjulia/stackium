@@ -17,6 +17,7 @@ pub struct VariableWindow {
     active_tab: ActiveTab,
     registers: Promise<Result<Registers, String>>,
     stack: Option<Promise<Result<Vec<u8>, String>>>,
+    hover_text: Option<String>,
 }
 
 fn arrow_tip_length(
@@ -43,6 +44,7 @@ impl VariableWindow {
             active_tab: ActiveTab::VariableList,
             registers: Promise::from_ready(Err(String::new())),
             stack: None,
+            hover_text: None,
         };
         s.dirty();
         s
@@ -125,7 +127,7 @@ impl VariableWindow {
                 Some(s) => {
                     if let Some(Ok(stack)) = s.ready() {
                         //TODO: find a solution for the window height
-                        ScrollArea::vertical().max_height(800.0).show(ui, |ui| {
+                        ScrollArea::vertical().max_height(900.0).show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 let height = 15.0;
                                 egui_extras::TableBuilder::new(ui)
@@ -169,31 +171,46 @@ impl VariableWindow {
                                     });
 
                                 let heightpad = height + 3.0;
-                                let (rect, _) = ui.allocate_exact_size(
+                                let (rect, response) = ui.allocate_exact_size(
                                     Vec2::new(200.0, heightpad + heightpad * stack.len() as f32),
-                                    egui::Sense::focusable_noninteractive(),
+                                    egui::Sense::hover(),
                                 );
-                                let get_y_from_addr = |addr: u64| -> f32 {
+                                if let Some(hover_text) = &self.hover_text {
+                                    response.on_hover_text_at_pointer(hover_text);
+                                }
+                                fn get_y_from_addr(
+                                    rect: &egui::Rect,
+                                    stack_ptr: u64,
+                                    rsp_offset: u64,
+                                    heightpad: f32,
+                                    addr: u64,
+                                ) -> f32 {
                                     return rect.max.y
-                                        - ((addr as i64 - (registers.rsp - rsp_offset) as i64)
-                                            as f32
+                                        - ((addr as i64 - (stack_ptr - rsp_offset) as i64) as f32
                                             * heightpad as f32
                                             + heightpad as f32);
-                                };
+                                }
                                 // ui.painter().rect_filled(rect, 0.0, egui::Color32::WHITE);
                                 let colors = [
                                     Color32::DARK_RED,
-                                    Color32::GOLD,
+                                    Color32::from_rgb(169, 158, 0),
                                     Color32::DARK_GREEN,
                                     Color32::DARK_BLUE,
                                 ];
                                 let mut draw_ref_count = 0;
-                                let mut render_ref_arrow = |color: Color32, from: f32, to: f32| {
+                                fn render_ref_arrow(
+                                    ui: &egui::Ui,
+                                    rect: &egui::Rect,
+                                    draw_ref_count: &mut i32,
+                                    color: Color32,
+                                    from: f32,
+                                    to: f32,
+                                ) {
                                     // Horizontal line to vert
                                     ui.painter().line_segment(
                                         [
                                             Pos2::new(
-                                                rect.max.x - 10.0 - draw_ref_count as f32 * 15.0,
+                                                rect.max.x - 10.0 - *draw_ref_count as f32 * 15.0,
                                                 from,
                                             ),
                                             Pos2::new(rect.min.x + 20.0, from),
@@ -204,11 +221,11 @@ impl VariableWindow {
                                     ui.painter().line_segment(
                                         [
                                             Pos2::new(
-                                                rect.max.x - 10.0 - draw_ref_count as f32 * 15.0,
+                                                rect.max.x - 10.0 - *draw_ref_count as f32 * 15.0,
                                                 from,
                                             ),
                                             Pos2::new(
-                                                rect.max.x - 10.0 - draw_ref_count as f32 * 15.0,
+                                                rect.max.x - 10.0 - *draw_ref_count as f32 * 15.0,
                                                 to,
                                             ),
                                         ],
@@ -218,19 +235,24 @@ impl VariableWindow {
                                     arrow_tip_length(
                                         ui.painter(),
                                         Pos2::new(
-                                            rect.max.x - 10.0 - draw_ref_count as f32 * 15.0,
+                                            rect.max.x - 10.0 - *draw_ref_count as f32 * 15.0,
                                             to,
                                         ),
                                         Vec2::new(
-                                            -rect.width() + 25.0 + draw_ref_count as f32 * 15.0,
+                                            -rect.width() + 25.0 + *draw_ref_count as f32 * 15.0,
                                             0.0,
                                         ),
                                         Stroke { width: 3.0, color },
                                         10.0,
                                     );
-                                    draw_ref_count += 1;
-                                };
-                                let render_invalid_ptr_arrow = |pos: f32, color: Color32| {
+                                    *draw_ref_count += 1;
+                                }
+                                fn render_invalid_ptr_arrow(
+                                    ui: &egui::Ui,
+                                    rect: &egui::Rect,
+                                    pos: f32,
+                                    color: Color32,
+                                ) {
                                     // Horizontal line to vert
                                     ui.painter().line_segment(
                                         [
@@ -249,7 +271,7 @@ impl VariableWindow {
                                         },
                                         color,
                                     );
-                                };
+                                }
                                 fn render_var_line(
                                     ui: &egui::Ui,
                                     rect: &egui::Rect,
@@ -271,13 +293,14 @@ impl VariableWindow {
                                         },
                                     );
                                     if inline {
-                                        let galley = ui.painter().layout_no_wrap(
+                                        let galley = ui.painter().layout(
                                             name.to_string(),
                                             FontId {
                                                 size: 15.0,
                                                 family: egui::FontFamily::Monospace,
                                             },
                                             egui::Color32::WHITE,
+                                            bottom - top,
                                         );
                                         let pos =
                                             Pos2::new(rect.min.x + offset - 8.0, bottom - 5.0);
@@ -320,76 +343,194 @@ impl VariableWindow {
                                         } => *byte_size,
                                     }
                                 }
-                                let mut render_variable = |var: &Variable, ivar: usize| {
+                                fn render_variable(
+                                    ui: &egui::Ui,
+                                    rect: &egui::Rect,
+                                    registers: &Registers,
+                                    rsp_offset: u64,
+                                    heightpad: f32,
+                                    height: f32,
+                                    color: Color32,
+                                    draw_ref_count: &mut i32,
+                                    var: &Variable,
+                                    offset: f32,
+                                    stack: &Vec<u8>,
+                                ) {
                                     if let (Some(addr), Some(typename), Some(name)) =
                                         (var.addr, &var.type_name, &var.name)
                                     {
                                         match typename {
                                             TypeName::Name { name, byte_size } => {
-                                                let top =
-                                                    get_y_from_addr(addr + *byte_size as u64 - 1)
-                                                        + 2.0;
-                                                let bottom = get_y_from_addr(addr) + height - 2.0;
+                                                let top = get_y_from_addr(
+                                                    rect,
+                                                    registers.rsp,
+                                                    rsp_offset,
+                                                    heightpad,
+                                                    addr + *byte_size as u64 - 1,
+                                                ) + 2.0;
+                                                let bottom = get_y_from_addr(
+                                                    rect,
+                                                    registers.rsp,
+                                                    rsp_offset,
+                                                    heightpad,
+                                                    addr,
+                                                ) + height
+                                                    - 2.0;
                                                 render_var_line(
                                                     ui,
                                                     &rect,
-                                                    0f32,
+                                                    offset,
                                                     top,
                                                     bottom,
                                                     &format!("{}: {}", name, typename.to_string()),
-                                                    colors[ivar % colors.len()],
+                                                    color,
                                                     false,
                                                 );
                                             }
                                             TypeName::Arr { arr_type, count } => {
                                                 let byte_size = get_byte_size(arr_type.as_ref());
-                                                for i in 0..*count {
-                                                    let addr = i as u64 * byte_size as u64 + addr;
-                                                    let bottom =
-                                                        get_y_from_addr(addr) + height - 2.0;
 
-                                                    let top = get_y_from_addr(
-                                                        addr + byte_size as u64 - 1,
-                                                    ) + 2.0;
-                                                    render_var_line(
-                                                        ui,
-                                                        &rect,
-                                                        0f32,
-                                                        top,
-                                                        bottom,
-                                                        &format!("{}[{}]", name, i),
-                                                        colors[ivar % colors.len()],
-                                                        false,
-                                                    );
-                                                }
-                                            }
-                                            TypeName::Ref(typename) => {
-                                                let bottom = get_y_from_addr(addr) + height - 2.0;
-                                                let top = get_y_from_addr(addr + 8 - 1) + 2.0;
-                                                if let Some(value) = var.value {
-                                                    if value >= registers.rsp - rsp_offset
-                                                        && value <= registers.rbp + 16
-                                                    {
-                                                        render_ref_arrow(
-                                                            colors[ivar % colors.len()],
-                                                            top + (bottom - top) / 2.0 - 10.0,
-                                                            get_y_from_addr(value),
-                                                        );
-                                                    } else {
-                                                        render_invalid_ptr_arrow(
-                                                            top + (bottom - top) / 2.0 - 10.0,
-                                                            colors[ivar % colors.len()],
-                                                        )
-                                                    }
-                                                }
+                                                let bottom = get_y_from_addr(
+                                                    rect,
+                                                    registers.rsp,
+                                                    rsp_offset,
+                                                    heightpad,
+                                                    addr,
+                                                ) + height
+                                                    - 2.0;
+
+                                                let top = get_y_from_addr(
+                                                    rect,
+                                                    registers.rsp,
+                                                    rsp_offset,
+                                                    heightpad,
+                                                    addr + byte_size as u64 * *count as u64 - 1,
+                                                ) + 2.0;
+                                                let offset = offset + 5.0;
                                                 render_var_line(
                                                     ui,
                                                     &rect,
-                                                    0f32,
+                                                    offset,
+                                                    top,
+                                                    bottom,
+                                                    &format!("{}", name),
+                                                    color,
+                                                    true,
+                                                );
+                                                for i in 0..*count {
+                                                    let addr = i as u64 * byte_size as u64 + addr;
+                                                    // let bottom = get_y_from_addr(
+                                                    //     rect,
+                                                    //     registers.rsp,
+                                                    //     rsp_offset,
+                                                    //     heightpad,
+                                                    //     addr,
+                                                    // ) + height
+                                                    //     - 2.0;
+
+                                                    // let top = get_y_from_addr(
+                                                    //     rect,
+                                                    //     registers.rsp,
+                                                    //     rsp_offset,
+                                                    //     heightpad,
+                                                    //     addr + byte_size as u64 - 1,
+                                                    // ) + 2.0;
+                                                    render_variable(
+                                                        ui,
+                                                        rect,
+                                                        registers,
+                                                        rsp_offset,
+                                                        heightpad,
+                                                        height,
+                                                        color,
+                                                        draw_ref_count,
+                                                        &Variable {
+                                                            name: Some(format!("{}[{}]", name, i)),
+                                                            type_name: Some(*arr_type.clone()),
+                                                            value: None,
+                                                            file: var.file.clone(),
+                                                            line: var.line.clone(),
+                                                            addr: Some(addr),
+                                                            high_pc: var.high_pc,
+                                                            low_pc: var.low_pc,
+                                                        },
+                                                        offset + 20.0,
+                                                        stack,
+                                                    );
+                                                    // render_var_line(
+                                                    //     ui,
+                                                    //     &rect,
+                                                    //     offset + 20.0,
+                                                    //     top,
+                                                    //     bottom,
+                                                    //     &format!("{}[{}]", name, i),
+                                                    //     color,
+                                                    //     false,
+                                                    // );
+                                                }
+                                            }
+                                            TypeName::Ref(typename) => {
+                                                let bottom = get_y_from_addr(
+                                                    rect,
+                                                    registers.rsp,
+                                                    rsp_offset,
+                                                    heightpad,
+                                                    addr,
+                                                ) + height
+                                                    - 2.0;
+                                                let top = get_y_from_addr(
+                                                    rect,
+                                                    registers.rsp,
+                                                    rsp_offset,
+                                                    heightpad,
+                                                    addr + 8 - 1,
+                                                ) + 2.0;
+                                                // if let Some(value) = var.value {
+                                                let index = addr as usize
+                                                    - (registers.rsp - rsp_offset) as usize;
+                                                let value = &stack[index..index + 8];
+                                                let value = value[0] as u64
+                                                    | (value[1] as u64) << 8
+                                                    | (value[2] as u64) << 16
+                                                    | (value[3] as u64) << 24
+                                                    | (value[4] as u64) << 32
+                                                    | (value[5] as u64) << 40
+                                                    | (value[6] as u64) << 48
+                                                    | (value[7] as u64) << 56;
+                                                if value >= registers.rsp - rsp_offset
+                                                    && value <= registers.rbp + 16
+                                                {
+                                                    render_ref_arrow(
+                                                        ui,
+                                                        &rect,
+                                                        draw_ref_count,
+                                                        color,
+                                                        top + (bottom - top) / 2.0 - 10.0,
+                                                        get_y_from_addr(
+                                                            rect,
+                                                            registers.rsp,
+                                                            rsp_offset,
+                                                            heightpad,
+                                                            value,
+                                                        ),
+                                                    );
+                                                } else {
+                                                    render_invalid_ptr_arrow(
+                                                        ui,
+                                                        rect,
+                                                        top + (bottom - top) / 2.0 - 10.0,
+                                                        color,
+                                                    )
+                                                }
+                                                // }
+                                                render_var_line(
+                                                    ui,
+                                                    &rect,
+                                                    offset,
                                                     top,
                                                     bottom,
                                                     &format!("{}: {}", name, typename.to_string()),
-                                                    colors[ivar % colors.len()],
+                                                    color,
                                                     false,
                                                 );
                                             }
@@ -398,43 +539,61 @@ impl VariableWindow {
                                                 members,
                                                 byte_size,
                                             } => {
-                                                let bottom = get_y_from_addr(addr) + height - 2.0;
-                                                let top =
-                                                    get_y_from_addr(addr + *byte_size as u64 - 1)
-                                                        + 2.0;
+                                                let bottom = get_y_from_addr(
+                                                    rect,
+                                                    registers.rsp,
+                                                    rsp_offset,
+                                                    heightpad,
+                                                    addr,
+                                                ) + height
+                                                    - 2.0;
+                                                let top = get_y_from_addr(
+                                                    rect,
+                                                    registers.rsp,
+                                                    rsp_offset,
+                                                    heightpad,
+                                                    addr + *byte_size as u64 - 1,
+                                                ) + 2.0;
+                                                let offset = offset + 5.0;
                                                 render_var_line(
                                                     ui,
                                                     &rect,
-                                                    0f32,
+                                                    offset,
                                                     top,
                                                     bottom,
-                                                    &format!("{}: struct {}", name, typename),
-                                                    colors[ivar % colors.len()],
+                                                    &format!("{}", name),
+                                                    color,
                                                     true,
                                                 );
-                                                for (name, membertype, offset) in members {
-                                                    let addr = addr + *offset as u64;
-                                                    let byte_size = get_byte_size(membertype);
-                                                    let bottom =
-                                                        get_y_from_addr(addr) + height - 2.0;
-                                                    let top = get_y_from_addr(
-                                                        addr + byte_size as u64 - 1,
-                                                    ) + 2.0;
-                                                    render_var_line(
+                                                for (name, membertype, offset_byte) in members {
+                                                    let addr = addr + *offset_byte as u64;
+                                                    render_variable(
                                                         ui,
-                                                        &rect,
-                                                        20.0,
-                                                        top,
-                                                        bottom,
-                                                        name,
-                                                        colors[ivar % colors.len()],
-                                                        false,
+                                                        rect,
+                                                        registers,
+                                                        rsp_offset,
+                                                        heightpad,
+                                                        height,
+                                                        color,
+                                                        draw_ref_count,
+                                                        &Variable {
+                                                            name: Some(name.clone()),
+                                                            type_name: Some(membertype.clone()),
+                                                            value: None,
+                                                            file: var.file.clone(),
+                                                            line: var.line.clone(),
+                                                            addr: Some(addr),
+                                                            high_pc: var.high_pc,
+                                                            low_pc: var.low_pc,
+                                                        },
+                                                        offset + 20.0,
+                                                        stack,
                                                     );
                                                 }
                                             }
                                         }
                                     }
-                                };
+                                }
                                 if let Some(Ok(vars)) = self.variables.ready() {
                                     let vars: Vec<Variable> = vars
                                         .iter()
@@ -486,12 +645,58 @@ impl VariableWindow {
                                         )
                                         .enumerate()
                                     {
-                                        render_variable(var, ivar);
+                                        render_variable(
+                                            ui,
+                                            &rect,
+                                            registers,
+                                            rsp_offset,
+                                            heightpad,
+                                            height,
+                                            colors[ivar % colors.len()],
+                                            &mut draw_ref_count,
+                                            var,
+                                            0f32,
+                                            stack,
+                                        );
+                                        if let (Some(typename), Some(addr)) =
+                                            (&var.type_name, var.addr)
+                                        {
+                                            let size = get_byte_size(typename);
+                                            let bottom = get_y_from_addr(
+                                                &rect,
+                                                registers.rsp,
+                                                rsp_offset,
+                                                heightpad,
+                                                addr,
+                                            );
+
+                                            let top = get_y_from_addr(
+                                                &rect,
+                                                registers.rsp,
+                                                rsp_offset,
+                                                heightpad,
+                                                addr + size as u64,
+                                            );
+                                            if ui.rect_contains_pointer(
+                                                egui::Rect::from_x_y_ranges(
+                                                    0f32..=100000f32,
+                                                    top..=bottom,
+                                                ),
+                                            ) {
+                                                self.hover_text = Some(typename.to_string());
+                                            }
+                                        }
                                     }
                                     ui.painter().arrow(
                                         Pos2::new(
                                             rect.min.x + 8.0,
-                                            get_y_from_addr(registers.rsp) + height / 2.0,
+                                            get_y_from_addr(
+                                                &rect,
+                                                registers.rsp,
+                                                rsp_offset,
+                                                heightpad,
+                                                registers.rsp,
+                                            ) + height / 2.0,
                                         ),
                                         Vec2::new(-15.0, 0.0),
                                         Stroke {
@@ -502,7 +707,13 @@ impl VariableWindow {
                                     ui.painter().text(
                                         Pos2::new(
                                             rect.min.x + 15.0,
-                                            get_y_from_addr(registers.rsp) + height / 2.0,
+                                            get_y_from_addr(
+                                                &rect,
+                                                registers.rsp,
+                                                rsp_offset,
+                                                heightpad,
+                                                registers.rsp,
+                                            ) + height / 2.0,
                                         ),
                                         egui::Align2::LEFT_CENTER,
                                         "Stack Pointer",
