@@ -360,7 +360,10 @@ impl VariableWindow {
                                         (var.addr, &var.type_name, &var.name)
                                     {
                                         match typename {
-                                            TypeName::Name { name, byte_size } => {
+                                            TypeName::Name {
+                                                name: typename,
+                                                byte_size,
+                                            } => {
                                                 let top = get_y_from_addr(
                                                     rect,
                                                     registers.rsp,
@@ -382,7 +385,7 @@ impl VariableWindow {
                                                     offset,
                                                     top,
                                                     bottom,
-                                                    &format!("{}: {}", name, typename.to_string()),
+                                                    &format!("{}: {}", name, typename),
                                                     color,
                                                     false,
                                                 );
