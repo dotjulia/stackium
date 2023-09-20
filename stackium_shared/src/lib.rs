@@ -57,15 +57,46 @@ pub enum CommandOutput {
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, Clone)]
 pub enum TypeName {
-    Name(String),
+    /// Name, Byte Size
+    Name {
+        name: String,
+        byte_size: usize,
+    },
+    /// ArrType, Count
+    Arr {
+        arr_type: Box<TypeName>,
+        count: usize,
+    },
     Ref(Box<TypeName>),
+    /// Name (Name, Type, offset), Byte Size
+    ProductType {
+        name: String,
+        members: Vec<(String, TypeName, usize)>,
+        byte_size: usize,
+    },
 }
 
 impl ToString for TypeName {
     fn to_string(&self) -> String {
         match self {
-            TypeName::Name(name) => name.clone(),
+            TypeName::Name { name, byte_size: _ } => name.clone(),
             TypeName::Ref(reference) => format!("{}&", reference.to_string()),
+            TypeName::Arr {
+                arr_type,
+                count: length,
+            } => format!("{}[{}]", arr_type.to_string(), length),
+            TypeName::ProductType {
+                name,
+                members: prod,
+                byte_size: _,
+            } => {
+                name.clone()
+                    + " = "
+                    + &prod.iter().fold("{ ".to_owned(), |sum, e| {
+                        sum + "." + &e.0 + " = " + &e.1.to_string() + " "
+                    })
+                    + " } "
+            }
         }
     }
 }

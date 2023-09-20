@@ -79,20 +79,26 @@ impl VariableWindow {
                                 {
                                     body.row(20.0, |mut row| {
                                         row.col(|ui| {
-                                            ui.label(format!(
-                                                "{}: {}",
-                                                variable
-                                                    .name
-                                                    .clone()
-                                                    .unwrap_or("unknown".to_owned()),
-                                                variable
-                                                    .type_name
-                                                    .clone()
-                                                    .unwrap_or(stackium_shared::TypeName::Name(
-                                                        "??".to_owned()
-                                                    ))
-                                                    .to_string()
-                                            ));
+                                            ui.add(
+                                                egui::Label::new(format!(
+                                                    "{}: {}",
+                                                    variable
+                                                        .name
+                                                        .clone()
+                                                        .unwrap_or("unknown".to_owned()),
+                                                    variable
+                                                        .type_name
+                                                        .clone()
+                                                        .unwrap_or(
+                                                            stackium_shared::TypeName::Name {
+                                                                name: "??".to_owned(),
+                                                                byte_size: 0
+                                                            }
+                                                        )
+                                                        .to_string()
+                                                ))
+                                                .wrap(false),
+                                            );
                                         });
                                         row.col(|ui| {
                                             ui.label(format!("{:#x}", address));
@@ -175,8 +181,260 @@ impl VariableWindow {
                                             + heightpad as f32);
                                 };
                                 // ui.painter().rect_filled(rect, 0.0, egui::Color32::WHITE);
-                                let colors =
-                                    [Color32::RED, Color32::YELLOW, Color32::GREEN, Color32::BLUE];
+                                let colors = [
+                                    Color32::DARK_RED,
+                                    Color32::GOLD,
+                                    Color32::DARK_GREEN,
+                                    Color32::DARK_BLUE,
+                                ];
+                                let mut draw_ref_count = 0;
+                                let mut render_ref_arrow = |color: Color32, from: f32, to: f32| {
+                                    // Horizontal line to vert
+                                    ui.painter().line_segment(
+                                        [
+                                            Pos2::new(
+                                                rect.max.x - 10.0 - draw_ref_count as f32 * 15.0,
+                                                from,
+                                            ),
+                                            Pos2::new(rect.min.x + 20.0, from),
+                                        ],
+                                        Stroke { width: 3.0, color },
+                                    );
+                                    // Vertical Line
+                                    ui.painter().line_segment(
+                                        [
+                                            Pos2::new(
+                                                rect.max.x - 10.0 - draw_ref_count as f32 * 15.0,
+                                                from,
+                                            ),
+                                            Pos2::new(
+                                                rect.max.x - 10.0 - draw_ref_count as f32 * 15.0,
+                                                to,
+                                            ),
+                                        ],
+                                        Stroke { width: 3.0, color },
+                                    );
+                                    // arrow back
+                                    arrow_tip_length(
+                                        ui.painter(),
+                                        Pos2::new(
+                                            rect.max.x - 10.0 - draw_ref_count as f32 * 15.0,
+                                            to,
+                                        ),
+                                        Vec2::new(
+                                            -rect.width() + 25.0 + draw_ref_count as f32 * 15.0,
+                                            0.0,
+                                        ),
+                                        Stroke { width: 3.0, color },
+                                        10.0,
+                                    );
+                                    draw_ref_count += 1;
+                                };
+                                let render_invalid_ptr_arrow = |pos: f32, color: Color32| {
+                                    // Horizontal line to vert
+                                    ui.painter().line_segment(
+                                        [
+                                            Pos2::new(rect.max.x - 80.0, pos),
+                                            Pos2::new(rect.min.x + 20.0, pos),
+                                        ],
+                                        Stroke { width: 3.0, color },
+                                    );
+                                    ui.painter().text(
+                                        Pos2::new(rect.max.x - 70.0, pos),
+                                        egui::Align2::LEFT_CENTER,
+                                        "?",
+                                        FontId {
+                                            size: 24.0,
+                                            family: egui::FontFamily::Monospace,
+                                        },
+                                        color,
+                                    );
+                                };
+                                fn render_var_line(
+                                    ui: &egui::Ui,
+                                    rect: &egui::Rect,
+                                    offset: f32,
+                                    top: f32,
+                                    bottom: f32,
+                                    name: &str,
+                                    color: Color32,
+                                    inline: bool,
+                                ) {
+                                    ui.painter().line_segment(
+                                        [
+                                            Pos2::new(rect.min.x + offset, bottom),
+                                            Pos2::new(rect.min.x + offset, top),
+                                        ],
+                                        Stroke {
+                                            width: if inline { 18.0 } else { 10.0 },
+                                            color,
+                                        },
+                                    );
+                                    if inline {
+                                        let galley = ui.painter().layout_no_wrap(
+                                            name.to_string(),
+                                            FontId {
+                                                size: 15.0,
+                                                family: egui::FontFamily::Monospace,
+                                            },
+                                            egui::Color32::WHITE,
+                                        );
+                                        let pos =
+                                            Pos2::new(rect.min.x + offset - 8.0, bottom - 5.0);
+                                        ui.painter().add(egui::Shape::Text(
+                                            egui::epaint::TextShape {
+                                                pos,
+                                                galley,
+                                                underline: egui::Stroke::NONE,
+                                                override_text_color: None,
+                                                angle: -std::f32::consts::PI / 2.0,
+                                            },
+                                        ));
+                                    } else {
+                                        ui.painter().text(
+                                            Pos2::new(
+                                                rect.min.x + 15.0 + offset,
+                                                top + (bottom - top) / 2.0,
+                                            ),
+                                            egui::Align2::LEFT_CENTER,
+                                            name,
+                                            FontId {
+                                                size: 10.0,
+                                                family: egui::FontFamily::Monospace,
+                                            },
+                                            color,
+                                        );
+                                    }
+                                }
+                                fn get_byte_size(typename: &TypeName) -> usize {
+                                    match typename {
+                                        TypeName::Name { name: _, byte_size } => *byte_size,
+                                        TypeName::Arr { arr_type, count } => {
+                                            count * get_byte_size(arr_type)
+                                        }
+                                        TypeName::Ref(_) => 8usize,
+                                        TypeName::ProductType {
+                                            name: _,
+                                            members: _,
+                                            byte_size,
+                                        } => *byte_size,
+                                    }
+                                }
+                                let mut render_variable = |var: &Variable, ivar: usize| {
+                                    if let (Some(addr), Some(typename), Some(name)) =
+                                        (var.addr, &var.type_name, &var.name)
+                                    {
+                                        match typename {
+                                            TypeName::Name { name, byte_size } => {
+                                                let top =
+                                                    get_y_from_addr(addr + *byte_size as u64 - 1)
+                                                        + 2.0;
+                                                let bottom = get_y_from_addr(addr) + height - 2.0;
+                                                render_var_line(
+                                                    ui,
+                                                    &rect,
+                                                    0f32,
+                                                    top,
+                                                    bottom,
+                                                    &format!("{}: {}", name, typename.to_string()),
+                                                    colors[ivar % colors.len()],
+                                                    false,
+                                                );
+                                            }
+                                            TypeName::Arr { arr_type, count } => {
+                                                let byte_size = get_byte_size(arr_type.as_ref());
+                                                for i in 0..*count {
+                                                    let addr = i as u64 * byte_size as u64 + addr;
+                                                    let bottom =
+                                                        get_y_from_addr(addr) + height - 2.0;
+
+                                                    let top = get_y_from_addr(
+                                                        addr + byte_size as u64 - 1,
+                                                    ) + 2.0;
+                                                    render_var_line(
+                                                        ui,
+                                                        &rect,
+                                                        0f32,
+                                                        top,
+                                                        bottom,
+                                                        &format!("{}[{}]", name, i),
+                                                        colors[ivar % colors.len()],
+                                                        false,
+                                                    );
+                                                }
+                                            }
+                                            TypeName::Ref(typename) => {
+                                                let bottom = get_y_from_addr(addr) + height - 2.0;
+                                                let top = get_y_from_addr(addr + 8 - 1) + 2.0;
+                                                if let Some(value) = var.value {
+                                                    if value >= registers.rsp - rsp_offset
+                                                        && value <= registers.rbp + 16
+                                                    {
+                                                        render_ref_arrow(
+                                                            colors[ivar % colors.len()],
+                                                            top + (bottom - top) / 2.0 - 10.0,
+                                                            get_y_from_addr(value),
+                                                        );
+                                                    } else {
+                                                        render_invalid_ptr_arrow(
+                                                            top + (bottom - top) / 2.0 - 10.0,
+                                                            colors[ivar % colors.len()],
+                                                        )
+                                                    }
+                                                }
+                                                render_var_line(
+                                                    ui,
+                                                    &rect,
+                                                    0f32,
+                                                    top,
+                                                    bottom,
+                                                    &format!("{}: {}", name, typename.to_string()),
+                                                    colors[ivar % colors.len()],
+                                                    false,
+                                                );
+                                            }
+                                            TypeName::ProductType {
+                                                name: typename,
+                                                members,
+                                                byte_size,
+                                            } => {
+                                                let bottom = get_y_from_addr(addr) + height - 2.0;
+                                                let top =
+                                                    get_y_from_addr(addr + *byte_size as u64 - 1)
+                                                        + 2.0;
+                                                render_var_line(
+                                                    ui,
+                                                    &rect,
+                                                    0f32,
+                                                    top,
+                                                    bottom,
+                                                    &format!("{}: struct {}", name, typename),
+                                                    colors[ivar % colors.len()],
+                                                    true,
+                                                );
+                                                for (name, membertype, offset) in members {
+                                                    let addr = addr + *offset as u64;
+                                                    let byte_size = get_byte_size(membertype);
+                                                    let bottom =
+                                                        get_y_from_addr(addr) + height - 2.0;
+                                                    let top = get_y_from_addr(
+                                                        addr + byte_size as u64 - 1,
+                                                    ) + 2.0;
+                                                    render_var_line(
+                                                        ui,
+                                                        &rect,
+                                                        20.0,
+                                                        top,
+                                                        bottom,
+                                                        name,
+                                                        colors[ivar % colors.len()],
+                                                        false,
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                };
                                 if let Some(Ok(vars)) = self.variables.ready() {
                                     let vars: Vec<Variable> = vars
                                         .iter()
@@ -185,7 +443,6 @@ impl VariableWindow {
                                         })
                                         .map(|v| v.clone())
                                         .collect();
-                                    let mut draw_ref_count = 0;
                                     for (ivar, var) in vars
                                         .iter()
                                         .chain(
@@ -194,9 +451,10 @@ impl VariableWindow {
                                                     name: Some("Return Address".to_owned()),
                                                     type_name: Some(
                                                         stackium_shared::TypeName::Ref(Box::from(
-                                                            stackium_shared::TypeName::Name(
-                                                                "void".to_owned(),
-                                                            ),
+                                                            stackium_shared::TypeName::Name {
+                                                                name: "void".to_owned(),
+                                                                byte_size: 0,
+                                                            },
                                                         )),
                                                     ),
                                                     value: None,
@@ -210,9 +468,10 @@ impl VariableWindow {
                                                     name: Some("Calling Base Pointer".to_owned()),
                                                     type_name: Some(
                                                         stackium_shared::TypeName::Ref(Box::from(
-                                                            stackium_shared::TypeName::Name(
-                                                                "void".to_owned(),
-                                                            ),
+                                                            stackium_shared::TypeName::Name {
+                                                                name: "void".to_owned(),
+                                                                byte_size: 0,
+                                                            },
                                                         )),
                                                     ),
                                                     value: None,
@@ -227,117 +486,7 @@ impl VariableWindow {
                                         )
                                         .enumerate()
                                     {
-                                        if let (Some(addr), Some(typename), Some(name)) =
-                                            (var.addr, &var.type_name, &var.name)
-                                        {
-                                            let bytesize = match typename {
-                                                stackium_shared::TypeName::Name(typename) => {
-                                                    match typename.as_str() {
-                                                        x if x.contains("char") => 1,
-                                                        "int" => 4,
-                                                        "short" => 2,
-                                                        "long" => 8,
-                                                        _ => 1,
-                                                    }
-                                                }
-                                                stackium_shared::TypeName::Ref(_) => 8,
-                                            };
-                                            let bottom = get_y_from_addr(addr) + height - 2.0;
-                                            let top = get_y_from_addr(addr + bytesize - 1) + 2.0;
-                                            if let (TypeName::Ref(_), Some(value)) =
-                                                (typename, var.value)
-                                            {
-                                                // Horizontal line to vert
-                                                ui.painter().line_segment(
-                                                    [
-                                                        Pos2::new(
-                                                            rect.max.x
-                                                                - 10.0
-                                                                - draw_ref_count as f32 * 15.0,
-                                                            top + (bottom - top) / 2.0 - 10.0,
-                                                        ),
-                                                        Pos2::new(
-                                                            rect.min.x + 20.0,
-                                                            top + (bottom - top) / 2.0 - 10.0,
-                                                        ),
-                                                    ],
-                                                    Stroke {
-                                                        width: 3.0,
-                                                        color: colors[ivar % colors.len()],
-                                                    },
-                                                );
-                                                if value >= registers.rsp - rsp_offset
-                                                    && value <= registers.rbp + 16
-                                                {
-                                                    // Vertical Line
-                                                    ui.painter().line_segment(
-                                                        [
-                                                            Pos2::new(
-                                                                rect.max.x
-                                                                    - 10.0
-                                                                    - draw_ref_count as f32 * 15.0,
-                                                                top + (bottom - top) / 2.0 - 10.0,
-                                                            ),
-                                                            Pos2::new(
-                                                                rect.max.x
-                                                                    - 10.0
-                                                                    - draw_ref_count as f32 * 15.0,
-                                                                get_y_from_addr(value),
-                                                            ),
-                                                        ],
-                                                        Stroke {
-                                                            width: 3.0,
-                                                            color: colors[ivar % colors.len()],
-                                                        },
-                                                    );
-                                                    // arrow back
-                                                    arrow_tip_length(
-                                                        ui.painter(),
-                                                        Pos2::new(
-                                                            rect.max.x
-                                                                - 10.0
-                                                                - draw_ref_count as f32 * 15.0,
-                                                            get_y_from_addr(value),
-                                                        ),
-                                                        Vec2::new(
-                                                            -rect.width()
-                                                                + 25.0
-                                                                + draw_ref_count as f32 * 15.0,
-                                                            0.0,
-                                                        ),
-                                                        Stroke {
-                                                            width: 3.0,
-                                                            color: colors[ivar % colors.len()],
-                                                        },
-                                                        10.0,
-                                                    );
-                                                    draw_ref_count += 1;
-                                                }
-                                            }
-                                            ui.painter().line_segment(
-                                                [
-                                                    Pos2::new(rect.min.x, bottom),
-                                                    Pos2::new(rect.min.x, top),
-                                                ],
-                                                Stroke {
-                                                    width: 10.0,
-                                                    color: colors[ivar % colors.len()],
-                                                },
-                                            );
-                                            ui.painter().text(
-                                                Pos2::new(
-                                                    rect.min.x + 15.0,
-                                                    top + (bottom - top) / 2.0,
-                                                ),
-                                                egui::Align2::LEFT_CENTER,
-                                                format!("{}: {}", name, typename.to_string()),
-                                                FontId {
-                                                    size: 10.0,
-                                                    family: egui::FontFamily::Monospace,
-                                                },
-                                                colors[ivar % colors.len()],
-                                            );
-                                        }
+                                        render_variable(var, ivar);
                                     }
                                     ui.painter().arrow(
                                         Pos2::new(

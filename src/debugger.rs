@@ -12,7 +12,7 @@ use stackium_shared::{
     Breakpoint, BreakpointPoint, Command, CommandOutput, DebugMeta, DwarfAttribute, FunctionMeta,
     Location, Registers, TypeName, Variable,
 };
-use std::{ffi::c_void, fs, path::PathBuf, sync::Arc};
+use std::{ffi::c_void, fs, path::PathBuf, rc::Rc, sync::Arc};
 
 pub mod breakpoint;
 pub mod error;
@@ -30,11 +30,12 @@ use self::{
     util::{find_function_from_name, get_addr_from_line, get_functions, get_line_from_pc},
 };
 
+type ConcreteReader = gimli::read::EndianReader<gimli::NativeEndian, Arc<[u8]>>;
 pub struct Debugger {
     pub child: Pid,
     breakpoints: Vec<Breakpoint>,
     pub program: PathBuf,
-    dwarf: gimli::read::Dwarf<gimli::read::EndianReader<gimli::NativeEndian, Arc<[u8]>>>,
+    dwarf: gimli::read::Dwarf<ConcreteReader>,
 }
 
 macro_rules! iter_every_entry {
@@ -128,15 +129,173 @@ impl Debugger {
         offset: gimli::AttributeValue<T>,
     ) -> Result<TypeName, DebugError> {
         if let gimli::AttributeValue::UnitRef(r) = offset {
-            let mut offset_entry;
-            let mut offset_unit;
-            find_entry_with_offset!(r, self, offset_entry offset_unit | {
-               if let Some(name) = offset_entry.attr_value(gimli::DW_AT_name)? {
-                return Ok(TypeName::Name(name.string_value(&self.dwarf.debug_str).ok_or(DebugError::InvalidType)?.to_string().unwrap().to_string()));
-               } else {
-                return Ok(TypeName::Ref(Box::new(self.decode_type(offset_entry.attr_value(gimli::DW_AT_type)?.unwrap())?)));
-               }
-            });
+            let mut unit_iter = self.dwarf.units();
+            while let Ok(Some(unit_header)) = unit_iter.next() {
+                let abbrevs = self.dwarf.abbreviations(&unit_header)?;
+                let mut tree = unit_header.entries_tree(&abbrevs, None)?;
+                let root = tree.root()?;
+                fn process_tree(
+                    debugger: &Debugger,
+                    node: gimli::EntriesTreeNode<ConcreteReader>,
+                    unit_header: &gimli::UnitHeader<ConcreteReader>,
+                    find_offset: gimli::UnitOffset<<ConcreteReader as gimli::Reader>::Offset>,
+                ) -> Result<Option<TypeName>, DebugError> {
+                    let dwarf = &debugger.dwarf;
+                    if node.entry().offset() == find_offset {
+                        match node.entry().tag() {
+                            gimli::DW_TAG_base_type => {
+                                if let (Ok(Some(name)), Ok(Some(byte_size))) = (
+                                    node.entry().attr(gimli::DW_AT_name),
+                                    node.entry().attr(gimli::DW_AT_byte_size),
+                                ) {
+                                    return Ok(Some(TypeName::Name {
+                                        name: name
+                                            .string_value(&dwarf.debug_str)
+                                            .unwrap()
+                                            .to_string()
+                                            .unwrap()
+                                            .to_string(),
+                                        byte_size: byte_size.udata_value().unwrap() as usize,
+                                    }));
+                                } else {
+                                    println!("Failed getting type name");
+                                }
+                            }
+                            gimli::DW_TAG_pointer_type => {
+                                if let Ok(Some(type_field)) = node.entry().attr(gimli::DW_AT_type) {
+                                    let sub_type = debugger.decode_type(type_field.value())?;
+                                    return Ok(Some(TypeName::Ref(Box::from(sub_type))));
+                                } else {
+                                    return Ok(Some(TypeName::Ref(Box::from(TypeName::Name {
+                                        name: "void".to_owned(),
+                                        byte_size: 0,
+                                    }))));
+                                }
+                            }
+                            gimli::DW_TAG_array_type => {
+                                if let Ok(Some(type_field)) = node.entry().attr(gimli::DW_AT_type) {
+                                    let sub_type = debugger.decode_type(type_field.value())?;
+                                    let mut children_iter = node.children();
+                                    let mut lengths = vec![];
+                                    while let Ok(Some(child)) = children_iter.next() {
+                                        if let Ok(Some(count)) =
+                                            child.entry().attr(gimli::DW_AT_count)
+                                        {
+                                            lengths.push(count.udata_value().unwrap() as usize);
+                                        } else {
+                                            println!("Found child entry but failed getting count");
+                                        }
+                                    }
+                                    let mut ret_val = sub_type;
+                                    for length in lengths.iter().rev() {
+                                        ret_val = TypeName::Arr {
+                                            arr_type: Box::from(ret_val),
+                                            count: *length,
+                                        };
+                                    }
+                                    return Ok(Some(ret_val));
+                                } else {
+                                    println!("Failed getting array type");
+                                }
+                            }
+                            gimli::DW_TAG_structure_type => {
+                                if let (Some(name), Some(byte_size)) = (
+                                    node.entry().attr(gimli::DW_AT_name)?,
+                                    node.entry().attr(gimli::DW_AT_byte_size)?,
+                                ) {
+                                    let name = name
+                                        .string_value(&dwarf.debug_str)
+                                        .unwrap()
+                                        .to_string()
+                                        .unwrap()
+                                        .to_string();
+                                    let byte_size = byte_size.udata_value().unwrap();
+                                    let mut children_iter = node.children();
+                                    let mut types: Vec<(String, TypeName, usize)> = vec![];
+                                    while let Ok(Some(child)) = children_iter.next() {
+                                        if let (
+                                            Ok(Some(name)),
+                                            Ok(Some(typeoffset)),
+                                            Ok(Some(byteoffset)),
+                                        ) = (
+                                            child.entry().attr(gimli::DW_AT_name),
+                                            child.entry().attr(gimli::DW_AT_type),
+                                            child.entry().attr(gimli::DW_AT_data_member_location),
+                                        ) {
+                                            let name = name
+                                                .string_value(&dwarf.debug_str)
+                                                .unwrap()
+                                                .to_string()
+                                                .unwrap()
+                                                .to_string();
+                                            let membertype =
+                                                debugger.decode_type(typeoffset.value())?;
+                                            let byteoffset = byteoffset.udata_value().unwrap();
+                                            types.push((name, membertype, byteoffset as usize));
+                                        } else {
+                                            println!("Failed to decode member type");
+                                        }
+                                    }
+                                    return Ok(Some(TypeName::ProductType {
+                                        name,
+                                        members: types,
+                                        byte_size: byte_size as usize,
+                                    }));
+                                } else {
+                                    println!("Failed to get struct name");
+                                }
+                            }
+                            _ => {
+                                println!("unknown");
+                                return Err(DebugError::InvalidType);
+                            }
+                        }
+                        return Err(DebugError::InvalidType);
+                    }
+                    let mut children = node.children();
+                    while let Some(child) = children.next()? {
+                        match process_tree(debugger, child, unit_header, find_offset)? {
+                            Some(t) => {
+                                return Ok(Some(t));
+                            }
+                            None => (),
+                        }
+                    }
+                    Ok(None)
+                }
+                if let Some(t) = process_tree(self, root, &unit_header, r)? {
+                    return Ok(t);
+                }
+            }
+            // let mut offset_entry;
+            // let mut offset_unit;
+            // find_entry_with_offset!(r, self, offset_entry offset_unit | {
+            //     println!("{}", offset_entry.tag());
+            //     match offset_entry.tag() {
+            //         gimli::DW_TAG_base_type => {
+            //             if let Some(name) = offset_entry.attr_value(gimli::DW_AT_name)? {
+            //                 return Ok(TypeName::Name(name.string_value(&self.dwarf.debug_str).ok_or(DebugError::InvalidType)?.to_string().unwrap().to_string()));
+            //             }
+            //         }
+            //         gimli::DW_TAG_pointer_type => {
+            //             return Ok(TypeName::Ref(Box::new(self.decode_type(offset_entry.attr_value(gimli::DW_AT_type)?.unwrap())?)));
+            //         }
+            //         gimli::DW_TAG_array_type => {
+            //             let arr_type = self.decode_type(offset_entry.attr_value(gimli::DW_AT_type)?.unwrap());
+            //             // how do children work
+            //             println!("{:?}", offset_unit.abbreviations);
+            //             println!("{}", offset_entry.has_children());
+            //             return Ok(TypeName::Arr(Box::from(arr_type?), 0));
+            //             let mut iter = offset_entry.attrs();
+
+            //             while let Ok(Some(e)) = iter.next() {
+            //                 println!("{:?}", e.name());
+            //             }
+            //             todo!()
+            //         }
+            //         _ => todo!()
+            //     }
+            // });
             Err(DebugError::InvalidType)
         } else {
             Err(DebugError::InvalidType)
@@ -245,12 +404,12 @@ impl Debugger {
                             EvaluationResult::RequiresEntryValue(_) => todo!(),
                             EvaluationResult::RequiresParameterRef(_) => todo!(),
                             EvaluationResult::RequiresRelocatedAddress(addr) => {
-                                let mut iter = self.dwarf.debug_info.units();
-                                while let Ok(Some(header)) = iter.next() {
-                                    let unit = self.dwarf.unit(header);
-                                }
-                                todo!()
-                                // result = evaluation.resume_with_relocated_address()
+                                // let mut iter = self.dwarf.debug_info.units();
+                                // while let Ok(Some(header)) = iter.next() {
+                                    // let unit = self.dwarf.unit(header);
+                                // }
+                                // todo!()
+                                result = evaluation.resume_with_relocated_address(addr)?;
                             },
                             EvaluationResult::RequiresIndexedAddress { index, relocate: _ } => {
                                 let addr = self.dwarf.debug_addr.get_address(unit.header.address_size(), unit.addr_base, index)?;
