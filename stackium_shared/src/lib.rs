@@ -37,6 +37,18 @@ pub struct Registers {
 }
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct MemoryMap {
+    pub from: u64,
+    pub to: u64,
+    pub read: bool,
+    pub write: bool,
+    pub execute: bool,
+    pub shared: bool,
+    pub offset: u64,
+    pub mapped: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub enum CommandOutput {
     Data(u64),
     Memory(Vec<u8>),
@@ -52,6 +64,7 @@ pub enum CommandOutput {
     Functions(Vec<FunctionMeta>),
     File(String),
     Backtrace(Vec<FunctionMeta>),
+    Maps(Vec<MemoryMap>),
     None,
 }
 
@@ -199,7 +212,10 @@ pub enum Command {
     /// Retrieves the current location in the source code
     Location,
     /// Find the address of a line in the source code
-    FindLine { line: u64, filename: String },
+    FindLine {
+        line: u64,
+        filename: String,
+    },
     /// Step over the current function call by continuing execution until another line in the current function is reached
     StepOut,
     /// Continue execution until a new line in the source code is reached
@@ -226,6 +242,7 @@ pub enum Command {
     Disassemble,
     /// For the CLI implementation
     Help,
+    Maps,
 }
 
 impl FromStr for Command {
@@ -237,6 +254,7 @@ impl FromStr for Command {
             "get_functions" => Ok(Command::GetFunctions),
             "location" => Ok(Command::Location),
             "continue" => Ok(Command::Continue),
+            "maps" => Ok(Command::Maps),
             "waitpid" => Ok(Command::WaitPid),
             "disassemble" => Ok(Command::Disassemble),
             "get_breakpoints" => Ok(Command::GetBreakpoints),

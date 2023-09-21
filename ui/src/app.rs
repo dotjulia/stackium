@@ -1,6 +1,6 @@
 use egui::{Align, Layout, TextureHandle};
 use poll_promise::Promise;
-use stackium_shared::{Command, CommandOutput, DebugMeta, Variable};
+use stackium_shared::{Command, CommandOutput, DebugMeta};
 use url::Url;
 
 use crate::{
@@ -10,6 +10,7 @@ use crate::{
     control_window::ControlWindow,
     debugger_window::{DebuggerWindow, Metadata},
     location::LocationWindow,
+    map_window::MapWindow,
     register_window::RegisterWindow,
     settings_window::SettingsWindow,
     toggle::toggle_ui,
@@ -81,7 +82,12 @@ impl StackiumApp {
                     DebuggerWindow {
                         title: "Registers",
                         is_active: false,
-                        body: Box::from(RegisterWindow::new(backend_url)),
+                        body: Box::from(RegisterWindow::new(backend_url.clone())),
+                    },
+                    DebuggerWindow {
+                        title: "Memory Mapping",
+                        is_active: false,
+                        body: Box::from(MapWindow::new(backend_url)),
                     },
                 ],
             },

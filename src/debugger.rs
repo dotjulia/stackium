@@ -10,7 +10,7 @@ use nix::{
 use object::{Object, ObjectSection};
 use stackium_shared::{
     Breakpoint, BreakpointPoint, Command, CommandOutput, DebugMeta, DwarfAttribute, FunctionMeta,
-    Location, Registers, TypeName, Variable,
+    Location, MemoryMap, Registers, TypeName, Variable,
 };
 use std::{ffi::c_void, fs, path::PathBuf, rc::Rc, sync::Arc};
 
@@ -560,6 +560,30 @@ impl Debugger {
 
     pub fn process_command(&mut self, command: Command) -> Result<CommandOutput, DebugError> {
         match command {
+            Command::Maps => {
+                let maps = std::fs::read_to_string(format!("/proc/{}/maps", self.child))?;
+                let lines = maps.lines();
+                use regex::Regex;
+                let re = Regex::new(
+                    r"^([0-9a-fA-F]+)-([0-9a-fA-F]+) (r|-)(w|-)(x|-)(p|s) ([0-9a-fA-f]+) [0-9]+:[0-9]+ [0-9]+ *(.+)?",
+                )
+                .unwrap();
+                let mut maps: Vec<MemoryMap> = Vec::new();
+                for line in lines {
+                    let captures = re.captures(line).unwrap();
+                    maps.push(MemoryMap {
+                        from: u64::from_str_radix(&captures[1], 16).unwrap(),
+                        to: u64::from_str_radix(&captures[2], 16).unwrap(),
+                        read: &captures[3] == "r",
+                        write: &captures[4] == "w",
+                        execute: &captures[5] == "x",
+                        shared: &captures[6] == "s",
+                        offset: u64::from_str_radix(&captures[7], 16).unwrap(),
+                        mapped: captures.get(8).map_or("", |m| m.as_str()).to_owned(),
+                    });
+                }
+                Ok(CommandOutput::Maps(maps))
+            }
             Command::Disassemble => Ok(CommandOutput::File(
                 std::str::from_utf8(
                     &std::process::Command::new("objdump")

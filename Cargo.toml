@@ -27,3 +27,4 @@ stackium_shared = { path = "./stackium_shared" }
 stackium_ui = { path = "./ui" }
 include_dir = "0.7.3"
 mime_guess = "2.0.4"
+regex = "1.9.5"

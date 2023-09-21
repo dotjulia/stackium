@@ -9,6 +9,7 @@ mod control_window;
 mod debugger_window;
 mod frame_history;
 mod location;
+mod map_window;
 mod register_window;
 mod settings_window;
 mod syntax_highlighting;
