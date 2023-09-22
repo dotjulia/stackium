@@ -18,7 +18,7 @@ pub struct VariableWindow {
     registers: Promise<Result<Registers, String>>,
     stack: Option<Promise<Result<Vec<u8>, String>>>,
     hover_text: Option<String>,
-    additional_loaded_sections: Vec<(u64, Vec<u8>)>,
+    additional_loaded_sections: Vec<(u64, u64, String, Promise<Result<Vec<u8>, String>>)>,
     mapping: Promise<Result<Vec<MemoryMap>, String>>,
 }
 
@@ -166,6 +166,21 @@ fn get_byte_size(typename: &TypeName) -> usize {
         } => *byte_size,
     }
 }
+
+fn read_value_stack(addr: u64, registers: &Registers, rsp_offset: u64, stack: &[u8]) -> u64 {
+    let index = addr as usize - (registers.rsp - rsp_offset) as usize;
+    let value = &stack[index..index + 8];
+    let value = value[0] as u64
+        | (value[1] as u64) << 8
+        | (value[2] as u64) << 16
+        | (value[3] as u64) << 24
+        | (value[4] as u64) << 32
+        | (value[5] as u64) << 40
+        | (value[6] as u64) << 48
+        | (value[7] as u64) << 56;
+    value
+}
+
 fn render_variable(
     ui: &egui::Ui,
     rect: &egui::Rect,
@@ -263,29 +278,6 @@ fn render_variable(
                     - 2.0;
                 let top =
                     get_y_from_addr(rect, registers.rsp, rsp_offset, heightpad, addr + 8 - 1) + 2.0;
-                // if let Some(value) = var.value {
-                let index = addr as usize - (registers.rsp - rsp_offset) as usize;
-                let value = &stack[index..index + 8];
-                let value = value[0] as u64
-                    | (value[1] as u64) << 8
-                    | (value[2] as u64) << 16
-                    | (value[3] as u64) << 24
-                    | (value[4] as u64) << 32
-                    | (value[5] as u64) << 40
-                    | (value[6] as u64) << 48
-                    | (value[7] as u64) << 56;
-                if value >= registers.rsp - rsp_offset && value <= registers.rbp + 16 {
-                    render_ref_arrow(
-                        ui,
-                        &rect,
-                        draw_ref_count,
-                        color,
-                        top + (bottom - top) / 2.0 - 10.0,
-                        get_y_from_addr(rect, registers.rsp, rsp_offset, heightpad, value),
-                    );
-                } else {
-                    render_invalid_ptr_arrow(ui, rect, top + (bottom - top) / 2.0 - 10.0, color)
-                }
                 render_var_line(
                     ui,
                     &rect,
@@ -298,7 +290,7 @@ fn render_variable(
                 );
             }
             TypeName::ProductType {
-                name: typename,
+                name: _typename,
                 members,
                 byte_size,
             } => {
@@ -351,6 +343,37 @@ fn render_variable(
             }
         }
     }
+}
+
+fn render_section(ui: &mut egui::Ui, start: u64, memory: &Vec<u8>, name: &String) {
+    ui.horizontal(|ui| {
+        let line_height = 17f32;
+        let (rect, response) = ui.allocate_exact_size(
+            Vec2::new(100.0, line_height + memory.len() as f32 * line_height),
+            egui::Sense::hover(),
+        );
+        ui.painter().rect(
+            rect,
+            0.0,
+            Color32::WHITE,
+            egui::Stroke {
+                width: 2.0,
+                color: Color32::BLACK,
+            },
+        );
+        ui.vertical(|ui| {
+            ui.add(egui::Label::new(name).wrap(false));
+            for (i, byte) in memory.iter().enumerate().rev() {
+                ui.monospace(format!(
+                    "{:#x} {:#04x} {}",
+                    start + i as u64,
+                    byte,
+                    *byte as char
+                ));
+            }
+            ui.separator();
+        });
+    });
 }
 
 impl VariableWindow {
@@ -515,6 +538,10 @@ impl VariableWindow {
                                         })
                                         .map(|v| v.clone())
                                         .collect();
+
+                                        ui.with_layout(
+                                            egui::Layout::top_down(egui::Align::TOP),
+                                            |ui| {
                                     for (ivar, var) in vars
                                         .iter()
                                         .chain(
@@ -571,7 +598,72 @@ impl VariableWindow {
                                             0f32,
                                             stack,
                                         );
-                                        if let (Some(typename), Some(addr)) =
+                                                if let (Some(addr), Some(TypeName::Ref(reftype))) =
+                                                    (&var.addr, &var.type_name)
+                                                {
+                                                    let value = read_value_stack(
+                                                        *addr, registers, rsp_offset, &stack,
+                                                    );
+                                                    if value >= registers.rsp - rsp_offset
+                                                        && value <= registers.rbp + 16
+                                                    {
+                                                        let current_y = get_y_from_addr(
+                                                            &rect,
+                                                            registers.rsp,
+                                                            rsp_offset,
+                                                            heightpad,
+                                                            *addr,
+                                                        );
+                                                        let dst_y = get_y_from_addr(
+                                                            &rect,
+                                                            registers.rsp,
+                                                            rsp_offset,
+                                                            heightpad,
+                                                            value,
+                                                        );
+                                                        render_ref_arrow(
+                                                            ui,
+                                                            &rect,
+                                                            &mut draw_ref_count,
+                                                            colors[ivar % colors.len()],
+                                                            current_y,
+                                                            dst_y,
+                                                        );
+                                                    } else if let Some((start, end, name, region)) = self
+                                                        .additional_loaded_sections
+                                                        .iter()
+                                                        .find(|(start, end, _, _)| {
+                                                            value >= *start && value <= *end
+                                                        })
+                                                    {
+                                                        if let Some(Ok(region)) = region.ready() {
+                                                            render_section(ui, *start, region, name);
+                                                        }
+                                                    } else if let Some(Ok(mapping)) =
+                                                        self.mapping.ready()
+                                                    {
+                                                        if let Some(m) =
+                                                            mapping.iter().find(|map| {
+                                                                map.from <= value && value <= map.to
+                                                            })
+                                                        {
+                                                            self.additional_loaded_sections.push((
+                                                                value - 16,
+                                                                value + 16,
+                                                                m.mapped.clone(),
+                                                                dispatch!(
+                                                                    self.backend_url.clone(),
+                                                                    Command::ReadMemory(
+                                                                        value - 16,
+                                                                        32
+                                                                    ),
+                                                                    Memory
+                                                                ),
+                                                            ));
+                                                        }
+                                                    }
+                                                }
+                                                                                  if let (Some(typename), Some(addr)) =
                                             (&var.type_name, var.addr)
                                         {
                                             let size = get_byte_size(typename);
@@ -600,6 +692,9 @@ impl VariableWindow {
                                             }
                                         }
                                     }
+
+  },
+                                        );
                                     ui.painter().arrow(
                                         Pos2::new(
                                             rect.min.x + 8.0,
