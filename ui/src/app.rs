@@ -20,6 +20,7 @@ use crate::{
 enum State {
     Debugging {
         backend_url: Url,
+        sidebar_open: bool,
         metadata: Promise<Result<DebugMeta, String>>,
         windows: Vec<DebuggerWindow>,
         icon: Option<TextureHandle>,
@@ -41,6 +42,7 @@ impl StackiumApp {
             next_state: None,
             state: State::Debugging {
                 icon: None,
+                sidebar_open: true,
                 backend_url: backend_url.clone(),
                 metadata: { dispatch!(backend_url.clone(), Command::DebugMeta, DebugMeta) },
                 windows: vec![
@@ -104,6 +106,7 @@ impl eframe::App for StackiumApp {
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         if let State::Debugging {
+            sidebar_open: _,
             backend_url: _,
             metadata: _,
             windows,
@@ -135,10 +138,11 @@ impl eframe::App for StackiumApp {
             State::Debugging {
                 backend_url: _,
                 metadata,
+                sidebar_open,
                 windows,
                 icon,
             } => {
-                egui::SidePanel::left("side_pabel").show(ctx, |ui| {
+                egui::SidePanel::left("side_pabel").show_animated(ctx, *sidebar_open, |ui| {
                     let texture = icon.get_or_insert_with(|| {
                         let icon = include_bytes!("../assets/icon-1024.png");
                         let image = match load_image_from_memory(icon) {
@@ -147,6 +151,11 @@ impl eframe::App for StackiumApp {
                         };
                         ui.ctx()
                             .load_texture("icon-1024", image, Default::default())
+                    });
+                    ui.with_layout(Layout::top_down(Align::Max), |ui| {
+                        if ui.button("X").clicked() {
+                            *sidebar_open = false;
+                        }
                     });
 
                     ui.with_layout(Layout::top_down(Align::Center), |ui| {
@@ -187,6 +196,11 @@ impl eframe::App for StackiumApp {
                 egui::CentralPanel::default().show(ctx, |ui| match metadata.ready() {
                     Some(m) => match m {
                         Ok(m) => {
+                            if !*sidebar_open {
+                                if ui.button("Open Sidebar").clicked() {
+                                    *sidebar_open = true;
+                                }
+                            }
                             ui.heading(format!("Debugging {}", m.binary_name));
                             ui.label(format!("Number of functions: {}", m.functions));
                             ui.label(format!("Number of variables: {}", m.vars));
@@ -194,7 +208,7 @@ impl eframe::App for StackiumApp {
                             let mut is_dirty = false;
                             for window in windows.iter_mut() {
                                 if window.is_active {
-                                    egui::Window::new(window.title).show(ctx, |ui| {
+                                    egui::Window::new(window.title).open(&mut window.is_active).show(ctx, |ui| {
                                         let (dirty, res) = window.body.ui(ui);
                                         if dirty {
                                             is_dirty = true;

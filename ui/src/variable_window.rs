@@ -364,12 +364,12 @@ fn render_section(ui: &mut egui::Ui, start: u64, memory: &Vec<u8>, name: &String
         ui.vertical(|ui| {
             ui.add(egui::Label::new(name).wrap(false));
             for (i, byte) in memory.iter().enumerate().rev() {
-                ui.monospace(format!(
+                ui.add(egui::Label::new(format!(
                     "{:#x} {:#04x} {}",
                     start + i as u64,
                     byte,
                     *byte as char
-                ));
+                )).wrap(false));
             }
             ui.separator();
         });
