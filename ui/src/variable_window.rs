@@ -11,6 +11,8 @@ enum ActiveTab {
     StackView,
 }
 
+type Section = (u64, u64, String, Promise<Result<Vec<u8>, String>>);
+
 pub struct VariableWindow {
     variables: Promise<Result<Vec<Variable>, String>>,
     backend_url: Url,
@@ -18,7 +20,7 @@ pub struct VariableWindow {
     registers: Promise<Result<Registers, String>>,
     stack: Option<Promise<Result<Vec<u8>, String>>>,
     hover_text: Option<String>,
-    additional_loaded_sections: Vec<(u64, u64, String, Promise<Result<Vec<u8>, String>>)>,
+    additional_loaded_sections: Vec<Section>,
     mapping: Promise<Result<Vec<MemoryMap>, String>>,
 }
 
@@ -56,12 +58,14 @@ fn render_ref_arrow(
     color: Color32,
     from: f32,
     to: f32,
+    invert: bool,
+    invert_length: f32,
 ) {
     // Horizontal line to vert
     ui.painter().line_segment(
         [
             Pos2::new(rect.max.x - 10.0 - *draw_ref_count as f32 * 15.0, from),
-            Pos2::new(rect.min.x + 20.0, from),
+            Pos2::new(rect.min.x + 15.0, from),
         ],
         Stroke { width: 3.0, color },
     );
@@ -77,7 +81,14 @@ fn render_ref_arrow(
     arrow_tip_length(
         ui.painter(),
         Pos2::new(rect.max.x - 10.0 - *draw_ref_count as f32 * 15.0, to),
-        Vec2::new(-rect.width() + 25.0 + *draw_ref_count as f32 * 15.0, 0.0),
+        Vec2::new(
+            if invert {
+                invert_length + *draw_ref_count as f32 * 15.0
+            } else {
+                (rect.width() - 25.0) * -1f32 + *draw_ref_count as f32 * 15.0
+            },
+            0.0,
+        ),
         Stroke { width: 3.0, color },
         10.0,
     );
@@ -345,31 +356,56 @@ fn render_variable(
     }
 }
 
+fn get_section_y(rect: &egui::Rect, sections: &Vec<Section>, addr: u64) -> f32 {
+    let separator_offset = 8.5;
+    let mut sum = -separator_offset;
+    let line_height = 17f32;
+    for (start, end, _, _) in sections {
+        if addr >= *start && addr <= *end {
+            sum += line_height + (addr - start) as f32 * line_height + separator_offset;
+            break;
+        } else {
+            sum += line_height + (end - start) as f32 * line_height + separator_offset;
+        }
+    }
+    rect.min.y + sum - line_height / 2.0
+}
+
 fn render_section(ui: &mut egui::Ui, start: u64, memory: &Vec<u8>, name: &String) {
     ui.horizontal(|ui| {
         let line_height = 17f32;
-        let (rect, response) = ui.allocate_exact_size(
-            Vec2::new(100.0, line_height + memory.len() as f32 * line_height),
+        let (_rect, _) = ui.allocate_exact_size(
+            Vec2::new(20.0, line_height + memory.len() as f32 * line_height),
             egui::Sense::hover(),
         );
-        ui.painter().rect(
-            rect,
-            0.0,
-            Color32::WHITE,
-            egui::Stroke {
-                width: 2.0,
-                color: Color32::BLACK,
-            },
-        );
+        // ui.painter().rect(
+        //     rect,
+        //     0.0,
+        //     Color32::WHITE,
+        //     egui::Stroke {
+        //         width: 2.0,
+        //         color: Color32::BLACK,
+        //     },
+        // );
         ui.vertical(|ui| {
             ui.add(egui::Label::new(name).wrap(false));
             for (i, byte) in memory.iter().enumerate().rev() {
-                ui.add(egui::Label::new(format!(
-                    "{:#x} {:#04x} {}",
-                    start + i as u64,
-                    byte,
-                    *byte as char
-                )).wrap(false));
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(format!(
+                            "{:#x} {:#04x} {}",
+                            start + i as u64,
+                            byte,
+                            if (*byte as char).is_ascii() {
+                                *byte as char
+                            } else {
+                                '·'
+                            }
+                        ))
+                        .monospace(),
+                    )
+                    .wrap(false),
+                );
             }
             ui.separator();
         });
@@ -539,10 +575,9 @@ impl VariableWindow {
                                         .map(|v| v.clone())
                                         .collect();
 
-                                        ui.with_layout(
-                                            egui::Layout::top_down(egui::Align::TOP),
+                                    ui.with_layout(egui::Layout::top_down(egui::Align::TOP),
                                             |ui| {
-                                    for (ivar, var) in vars
+                                        for (ivar, var) in vars
                                         .iter()
                                         .chain(
                                             [
@@ -612,8 +647,8 @@ impl VariableWindow {
                                                             registers.rsp,
                                                             rsp_offset,
                                                             heightpad,
-                                                            *addr,
-                                                        );
+                                                            *addr + 2,
+                                                        ) - 10.0;
                                                         let dst_y = get_y_from_addr(
                                                             &rect,
                                                             registers.rsp,
@@ -628,6 +663,8 @@ impl VariableWindow {
                                                             colors[ivar % colors.len()],
                                                             current_y,
                                                             dst_y,
+                                                            false,
+                                                            0.0,
                                                         );
                                                     } else if let Some((start, end, name, region)) = self
                                                         .additional_loaded_sections
@@ -636,9 +673,30 @@ impl VariableWindow {
                                                             value >= *start && value <= *end
                                                         })
                                                     {
-                                                        if let Some(Ok(region)) = region.ready() {
-                                                            render_section(ui, *start, region, name);
-                                                        }
+                                                        // everything ok 👍
+                                                        // draw arrow
+
+                                                        let current_y = get_y_from_addr(
+                                                            &rect,
+                                                            registers.rsp,
+                                                            rsp_offset,
+                                                            heightpad,
+                                                            *addr + 2,
+                                                        ) - 10.0;
+                                                        let dst_y = get_section_y(&rect, &self.additional_loaded_sections, value);
+                                                        render_ref_arrow(
+                                                            ui,
+                                                            &rect,
+                                                            &mut draw_ref_count,
+                                                            colors[ivar % colors.len()],
+                                                            current_y,
+                                                            dst_y,
+                                                            true,
+                                                            42.0,
+                                                        )
+                                                        // if let Some(Ok(region)) = region.ready() {
+                                                        //     render_section(ui, *start, region, name);
+                                                        // }
                                                     } else if let Some(Ok(mapping)) =
                                                         self.mapping.ready()
                                                     {
@@ -660,7 +718,18 @@ impl VariableWindow {
                                                                     Memory
                                                                 ),
                                                             ));
+                                                            self.additional_loaded_sections.sort_by(|a,b| b.0.partial_cmp(&a.0).unwrap());
                                                         }
+                                                    } else {
+
+                                                        let current_y = get_y_from_addr(
+                                                            &rect,
+                                                            registers.rsp,
+                                                            rsp_offset,
+                                                            heightpad,
+                                                            *addr + 2,
+                                                        ) - 10.0;
+                                                        render_invalid_ptr_arrow(ui, &rect, current_y, colors[ivar % colors.len()])
                                                     }
                                                 }
                                                                                   if let (Some(typename), Some(addr)) =
@@ -690,6 +759,12 @@ impl VariableWindow {
                                             ) {
                                                 self.hover_text = Some(typename.to_string());
                                             }
+                                        }
+                                    }
+
+                                    for (start, _, name, section) in self.additional_loaded_sections.iter() {
+                                        if let Some(Ok(section)) = section.ready() {
+                                            render_section(ui, *start, section, name);
                                         }
                                     }
 

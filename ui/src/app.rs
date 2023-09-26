@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use egui::{Align, Layout, TextureHandle};
 use poll_promise::Promise;
 use stackium_shared::{Command, CommandOutput, DebugMeta};
@@ -24,6 +26,7 @@ enum State {
         metadata: Promise<Result<DebugMeta, String>>,
         windows: Vec<DebuggerWindow>,
         icon: Option<TextureHandle>,
+        fullscreen: Option<&'static str>,
     },
     UnrecoverableFailure {
         message: String,
@@ -92,6 +95,7 @@ impl StackiumApp {
                         body: Box::from(MapWindow::new(backend_url)),
                     },
                 ],
+                fullscreen: None,
             },
         }
     }
@@ -111,6 +115,7 @@ impl eframe::App for StackiumApp {
             metadata: _,
             windows,
             icon: _,
+            fullscreen: _,
         } = &mut self.state
         {
             for window in windows {
@@ -141,6 +146,7 @@ impl eframe::App for StackiumApp {
                 sidebar_open,
                 windows,
                 icon,
+                fullscreen,
             } => {
                 egui::SidePanel::left("side_pabel").show_animated(ctx, *sidebar_open, |ui| {
                     let texture = icon.get_or_insert_with(|| {
@@ -201,21 +207,45 @@ impl eframe::App for StackiumApp {
                                     *sidebar_open = true;
                                 }
                             }
-                            ui.heading(format!("Debugging {}", m.binary_name));
-                            ui.label(format!("Number of functions: {}", m.functions));
-                            ui.label(format!("Number of variables: {}", m.vars));
-                            ui.label(format!("Files: {}", m.files.join(", ")));
+
                             let mut is_dirty = false;
-                            for window in windows.iter_mut() {
-                                if window.is_active {
-                                    egui::Window::new(window.title).open(&mut window.is_active).show(ctx, |ui| {
-                                        let (dirty, res) = window.body.ui(ui);
-                                        if dirty {
-                                            is_dirty = true;
-                                        }
-                                        res
-                                    });
+                            let mut close_fullscreen = false;
+                            if let Some(fullscreen) = fullscreen {
+                                if ui.button("Exit Fullscreen").clicked() {
+                                    close_fullscreen = true;
                                 }
+                                let window =
+                                    windows.iter_mut().find(|w| &w.title == fullscreen).unwrap();
+                                window.body.ui(ui);
+                            } else {
+                                ui.heading(format!("Debugging {}", m.binary_name));
+                                ui.label(format!("Number of functions: {}", m.functions));
+                                ui.label(format!("Number of variables: {}", m.vars));
+                                ui.label(format!("Files: {}", m.files.join(", ")));
+                                for window in windows.iter_mut() {
+                                    if window.is_active {
+                                        egui::Window::new(window.title)
+                                            .open(&mut window.is_active)
+                                            .show(ctx, |ui| {
+                                                ui.with_layout(
+                                                    Layout::top_down(Align::Max),
+                                                    |ui| {
+                                                        if ui.button("Fullscreen").clicked() {
+                                                            *fullscreen = Some(window.title);
+                                                        }
+                                                    },
+                                                );
+                                                let (dirty, res) = window.body.ui(ui);
+                                                if dirty {
+                                                    is_dirty = true;
+                                                }
+                                                res
+                                            });
+                                    }
+                                }
+                            }
+                            if close_fullscreen {
+                                *fullscreen = None;
                             }
                             if is_dirty {
                                 windows.iter_mut().for_each(|w| w.body.dirty());
