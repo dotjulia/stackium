@@ -9,8 +9,8 @@ use nix::{
 };
 use object::{Object, ObjectSection};
 use stackium_shared::{
-    Breakpoint, BreakpointPoint, Command, CommandOutput, DebugMeta, DwarfAttribute, FunctionMeta,
-    Location, MemoryMap, Registers, TypeName, Variable,
+    Breakpoint, BreakpointPoint, Command, CommandOutput, DataType, DebugMeta, DwarfAttribute,
+    FunctionMeta, Location, MemoryMap, Registers, TypeName, Variable,
 };
 use std::{ffi::c_void, fs, path::PathBuf, rc::Rc, sync::Arc};
 
@@ -127,7 +127,8 @@ impl Debugger {
     fn decode_type<T: gimli::Reader<Offset = usize>>(
         &self,
         offset: gimli::AttributeValue<T>,
-    ) -> Result<TypeName, DebugError> {
+        known_types: DataType,
+    ) -> Result<DataType, DebugError> {
         if let gimli::AttributeValue::UnitRef(r) = offset {
             let mut unit_iter = self.dwarf.units();
             while let Ok(Some(unit_header)) = unit_iter.next() {
@@ -139,7 +140,8 @@ impl Debugger {
                     node: gimli::EntriesTreeNode<ConcreteReader>,
                     unit_header: &gimli::UnitHeader<ConcreteReader>,
                     find_offset: gimli::UnitOffset<<ConcreteReader as gimli::Reader>::Offset>,
-                ) -> Result<Option<TypeName>, DebugError> {
+                    mut known_types: DataType,
+                ) -> Result<Option<DataType>, DebugError> {
                     let dwarf = &debugger.dwarf;
                     if node.entry().offset() == find_offset {
                         match node.entry().tag() {
@@ -148,32 +150,52 @@ impl Debugger {
                                     node.entry().attr(gimli::DW_AT_name),
                                     node.entry().attr(gimli::DW_AT_byte_size),
                                 ) {
-                                    return Ok(Some(TypeName::Name {
-                                        name: name
-                                            .string_value(&dwarf.debug_str)
-                                            .unwrap()
-                                            .to_string()
-                                            .unwrap()
-                                            .to_string(),
-                                        byte_size: byte_size.udata_value().unwrap() as usize,
-                                    }));
+                                    known_types.0.push((
+                                        find_offset.0,
+                                        TypeName::Name {
+                                            name: name
+                                                .string_value(&dwarf.debug_str)
+                                                .unwrap()
+                                                .to_string()
+                                                .unwrap()
+                                                .to_string(),
+                                            byte_size: byte_size.udata_value().unwrap() as usize,
+                                        },
+                                    ));
+                                    return Ok(Some(known_types));
                                 } else {
                                     println!("Failed getting type name");
                                 }
                             }
                             gimli::DW_TAG_pointer_type => {
                                 if let Ok(Some(type_field)) = node.entry().attr(gimli::DW_AT_type) {
-                                    //TODO: Find fix for self referential structs
-                                    // let sub_type = debugger.decode_type(type_field.value())?;
-                                    return Ok(Some(TypeName::Ref(Box::from(TypeName::Name {
-                                        name: "*".to_owned(),
-                                        byte_size: 0,
-                                    }))));
+                                    //TODO: Find fix for recursive types
+                                    let index = known_types
+                                        .0
+                                        .iter()
+                                        .position(|e| e.0 == type_field.offset_value().unwrap());
+                                    if let Some(index) = index {
+                                        let mut ret_vec = known_types.clone();
+                                        ret_vec.0.push((
+                                            find_offset.0,
+                                            TypeName::Ref { index: Some(index) },
+                                        ));
+                                        return Ok(Some(ret_vec));
+                                    }
+                                    let next_index = known_types.0.len();
+                                    let sub_type =
+                                        debugger.decode_type(type_field.value(), known_types)?;
+                                    known_types.0.push((
+                                        find_offset.0,
+                                        TypeName::Ref {
+                                            index: Some(next_index),
+                                        },
+                                    ));
+                                    return Ok(Some(known_types));
                                 } else {
-                                    return Ok(Some(TypeName::Ref(Box::from(TypeName::Name {
-                                        name: "void".to_owned(),
-                                        byte_size: 0,
-                                    }))));
+                                    known_types
+                                        .0
+                                        .push((find_offset.0, TypeName::Ref { index: None }));
                                 }
                             }
                             gimli::DW_TAG_array_type => {
@@ -197,7 +219,8 @@ impl Debugger {
                                             count: *length,
                                         };
                                     }
-                                    return Ok(Some(ret_val));
+                                    known_types.0.push(ret_val);
+                                    return Ok(Some(known_types));
                                 } else {
                                     println!("Failed getting array type");
                                 }
@@ -271,35 +294,6 @@ impl Debugger {
                     return Ok(t);
                 }
             }
-            // let mut offset_entry;
-            // let mut offset_unit;
-            // find_entry_with_offset!(r, self, offset_entry offset_unit | {
-            //     println!("{}", offset_entry.tag());
-            //     match offset_entry.tag() {
-            //         gimli::DW_TAG_base_type => {
-            //             if let Some(name) = offset_entry.attr_value(gimli::DW_AT_name)? {
-            //                 return Ok(TypeName::Name(name.string_value(&self.dwarf.debug_str).ok_or(DebugError::InvalidType)?.to_string().unwrap().to_string()));
-            //             }
-            //         }
-            //         gimli::DW_TAG_pointer_type => {
-            //             return Ok(TypeName::Ref(Box::new(self.decode_type(offset_entry.attr_value(gimli::DW_AT_type)?.unwrap())?)));
-            //         }
-            //         gimli::DW_TAG_array_type => {
-            //             let arr_type = self.decode_type(offset_entry.attr_value(gimli::DW_AT_type)?.unwrap());
-            //             // how do children work
-            //             println!("{:?}", offset_unit.abbreviations);
-            //             println!("{}", offset_entry.has_children());
-            //             return Ok(TypeName::Arr(Box::from(arr_type?), 0));
-            //             let mut iter = offset_entry.attrs();
-
-            //             while let Ok(Some(e)) = iter.next() {
-            //                 println!("{:?}", e.name());
-            //             }
-            //             todo!()
-            //         }
-            //         _ => todo!()
-            //     }
-            // });
             Err(DebugError::InvalidType)
         } else {
             Err(DebugError::InvalidType)

@@ -69,6 +69,9 @@ pub enum CommandOutput {
 }
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, Clone)]
+pub struct DataType(pub Vec<(usize, TypeName)>);
+
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, Clone)]
 pub enum TypeName {
     /// Name, Byte Size
     Name {
@@ -80,7 +83,9 @@ pub enum TypeName {
         arr_type: Box<TypeName>,
         count: usize,
     },
-    Ref(Box<TypeName>),
+    Ref {
+        index: Option<usize>,
+    },
     /// Name (Name, Type, offset), Byte Size
     ProductType {
         name: String,
@@ -89,11 +94,19 @@ pub enum TypeName {
     },
 }
 
+impl ToString for DataType {
+    fn to_string(&self) -> String {
+        self.0
+            .iter()
+            .fold(String::new(), |acc, t| acc + &t.1.to_string())
+    }
+}
+
 impl ToString for TypeName {
     fn to_string(&self) -> String {
         match self {
             TypeName::Name { name, byte_size: _ } => name.clone(),
-            TypeName::Ref(reference) => format!("{}*", reference.to_string()),
+            TypeName::Ref { index } => format!("{}*", index),
             TypeName::Arr {
                 arr_type,
                 count: length,
