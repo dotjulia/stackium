@@ -80,8 +80,8 @@ pub enum TypeName {
     },
     /// ArrType, Count
     Arr {
-        arr_type: Box<TypeName>,
-        count: usize,
+        arr_type: usize,
+        count: Vec<usize>,
     },
     Ref {
         index: Option<usize>,
@@ -89,7 +89,7 @@ pub enum TypeName {
     /// Name (Name, Type, offset), Byte Size
     ProductType {
         name: String,
-        members: Vec<(String, TypeName, usize)>,
+        members: Vec<(String, usize, usize)>,
         byte_size: usize,
     },
 }
@@ -106,30 +106,31 @@ impl ToString for TypeName {
     fn to_string(&self) -> String {
         match self {
             TypeName::Name { name, byte_size: _ } => name.clone(),
-            TypeName::Ref { index } => format!("{}*", index),
+            TypeName::Ref { index } => format!(
+                "{}*",
+                if let Some(index) = index {
+                    index.to_string()
+                } else {
+                    "void".to_owned()
+                }
+            ),
             TypeName::Arr {
                 arr_type,
                 count: length,
-            } => format!("{}[{}]", arr_type.to_string(), length),
+            } => format!(
+                "{}[{}]",
+                arr_type.to_string(),
+                length
+                    .iter()
+                    .map(|i| format!("[{}]", i))
+                    .collect::<Vec<String>>()
+                    .join("")
+            ),
             TypeName::ProductType {
                 name,
-                members: prod,
+                members: _prod,
                 byte_size: _,
-            } => {
-                name.clone()
-                    + ": "
-                    + &prod.iter().fold("{ \n".to_owned(), |sum, e| {
-                        sum + "  ."
-                            + &e.0
-                            + " = "
-                            + &e.1
-                                .to_string()
-                                .lines()
-                                .map(|l| "  ".to_owned() + l + "\n")
-                                .collect::<String>()
-                    })
-                    + " } "
-            }
+            } => name.clone(),
         }
     }
 }
@@ -153,7 +154,7 @@ pub struct Location {
 #[derive(Debug, Default, Serialize, Deserialize, schemars::JsonSchema, Clone)]
 pub struct Variable {
     pub name: Option<String>,
-    pub type_name: Option<TypeName>,
+    pub type_name: Option<DataType>,
     pub value: Option<u64>,
     pub file: Option<String>,
     pub line: Option<u64>,

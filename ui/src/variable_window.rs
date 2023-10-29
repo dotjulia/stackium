@@ -1,6 +1,6 @@
 use egui::{Color32, FontId, Pos2, RichText, ScrollArea, Stroke, Vec2};
 use poll_promise::Promise;
-use stackium_shared::{Command, CommandOutput, MemoryMap, Registers, TypeName, Variable};
+use stackium_shared::{Command, CommandOutput, DataType, MemoryMap, Registers, TypeName, Variable};
 use url::Url;
 
 use crate::{command::dispatch_command_and_then, debugger_window::DebuggerWindowImpl};
@@ -165,11 +165,14 @@ fn render_var_line(
         );
     }
 }
-fn get_byte_size(typename: &TypeName) -> usize {
-    match typename {
+fn get_byte_size(types: &DataType, index: usize) -> usize {
+    match &types.0[index].1 {
         TypeName::Name { name: _, byte_size } => *byte_size,
-        TypeName::Arr { arr_type, count } => count * get_byte_size(arr_type),
-        TypeName::Ref(_) => 8usize,
+        TypeName::Arr { arr_type, count } => {
+            count.iter().cloned().reduce(|e1, e2| e1 * e2).unwrap()
+                * get_byte_size(types, *arr_type)
+        }
+        TypeName::Ref { index: _ } => 8usize,
         TypeName::ProductType {
             name: _,
             members: _,
@@ -205,8 +208,38 @@ fn render_variable(
     offset: f32,
     stack: &Vec<u8>,
 ) {
-    if let (Some(addr), Some(typename), Some(name)) = (var.addr, &var.type_name, &var.name) {
-        match typename {
+    render_variable_override(
+        ui,
+        rect,
+        registers,
+        rsp_offset,
+        heightpad,
+        height,
+        color,
+        draw_ref_count,
+        var,
+        offset,
+        stack,
+        0,
+    )
+}
+fn render_variable_override(
+    ui: &egui::Ui,
+    rect: &egui::Rect,
+    registers: &Registers,
+    rsp_offset: u64,
+    heightpad: f32,
+    height: f32,
+    color: Color32,
+    draw_ref_count: &mut i32,
+    var: &Variable,
+    offset: f32,
+    stack: &Vec<u8>,
+    override_index: usize,
+) {
+    if let (Some(addr), Some(datatype), Some(name)) = (var.addr, &var.type_name, &var.name) {
+        let orig_type = &datatype.0[override_index].1;
+        match orig_type {
             TypeName::Name {
                 name: typename,
                 byte_size,
@@ -233,18 +266,19 @@ fn render_variable(
                 );
             }
             TypeName::Arr { arr_type, count } => {
-                let byte_size = get_byte_size(arr_type.as_ref());
+                let byte_size = get_byte_size(datatype, *arr_type);
 
                 let bottom = get_y_from_addr(rect, registers.rsp, rsp_offset, heightpad, addr)
                     + height
                     - 2.0;
-
                 let top = get_y_from_addr(
                     rect,
                     registers.rsp,
                     rsp_offset,
                     heightpad,
-                    addr + byte_size as u64 * *count as u64 - 1,
+                    addr + byte_size as u64
+                        * count.iter().cloned().reduce(|e1, e2| e1 * e2).unwrap() as u64
+                        - 1,
                 ) + 2.0;
                 let offset = offset + 5.0;
                 render_var_line(
@@ -257,9 +291,9 @@ fn render_variable(
                     color,
                     true,
                 );
-                for i in 0..*count {
+                for i in 0..count.iter().cloned().reduce(|e1, e2| e1 * e2).unwrap() {
                     let addr = i as u64 * byte_size as u64 + addr;
-                    render_variable(
+                    render_variable_override(
                         ui,
                         rect,
                         registers,
@@ -270,7 +304,7 @@ fn render_variable(
                         draw_ref_count,
                         &Variable {
                             name: Some(format!("{}[{}]", name, i)),
-                            type_name: Some(*arr_type.clone()),
+                            type_name: Some(datatype.clone()),
                             value: None,
                             file: var.file.clone(),
                             line: var.line.clone(),
@@ -280,10 +314,11 @@ fn render_variable(
                         },
                         offset + 20.0,
                         stack,
+                        *arr_type,
                     );
                 }
             }
-            TypeName::Ref(typename) => {
+            TypeName::Ref { index } => {
                 let bottom = get_y_from_addr(rect, registers.rsp, rsp_offset, heightpad, addr)
                     + height
                     - 2.0;
@@ -295,7 +330,7 @@ fn render_variable(
                     offset,
                     top,
                     bottom,
-                    &format!("{}: {}", name, typename.to_string()),
+                    &format!("{}: {}", name, orig_type.to_string()),
                     color,
                     false,
                 );
@@ -328,7 +363,7 @@ fn render_variable(
                 );
                 for (name, membertype, offset_byte) in members {
                     let addr = addr + *offset_byte as u64;
-                    render_variable(
+                    render_variable_override(
                         ui,
                         rect,
                         registers,
@@ -339,7 +374,7 @@ fn render_variable(
                         draw_ref_count,
                         &Variable {
                             name: Some(name.clone()),
-                            type_name: Some(membertype.clone()),
+                            type_name: Some(datatype.clone()),
                             value: None,
                             file: var.file.clone(),
                             line: var.line.clone(),
@@ -349,6 +384,7 @@ fn render_variable(
                         },
                         offset + 20.0,
                         stack,
+                        *membertype,
                     );
                 }
             }
@@ -362,7 +398,7 @@ fn get_section_y(rect: &egui::Rect, sections: &Vec<Section>, addr: u64) -> f32 {
     let line_height = 17f32;
     for (start, end, _, _) in sections {
         if addr >= *start && addr <= *end {
-            sum += line_height + (addr - start) as f32 * line_height + separator_offset;
+            sum += line_height + (end - addr) as f32 * line_height + separator_offset;
             break;
         } else {
             sum += line_height + (end - start) as f32 * line_height + separator_offset;
@@ -371,11 +407,60 @@ fn get_section_y(rect: &egui::Rect, sections: &Vec<Section>, addr: u64) -> f32 {
     rect.min.y + sum - line_height / 2.0
 }
 
+//TODO: maybe return possible section to load and factor out section loading code to seperate function in render_stack function
+fn render_heap_variable(
+    ui: &mut egui::Ui,
+    rect: &egui::Rect,
+    sections: &Vec<Section>,
+    addr: u64,
+    types: &DataType,
+    type_index: usize,
+    recurse: usize,
+) {
+    let top = get_section_y(
+        rect,
+        sections,
+        addr + get_byte_size(types, type_index) as u64,
+    );
+    let bottom = get_section_y(rect, sections, addr);
+    render_var_line(
+        ui,
+        rect,
+        278.0 - recurse as f32 * 24.0,
+        top,
+        bottom,
+        &types.0[type_index].1.to_string(),
+        Color32::RED,
+        true,
+    );
+    match &types.0[type_index].1 {
+        TypeName::Arr { arr_type, count } => todo!(),
+        TypeName::ProductType {
+            name: _,
+            members,
+            byte_size: _,
+        } => {
+            for (_, membertype, offset) in members {
+                render_heap_variable(
+                    ui,
+                    rect,
+                    sections,
+                    addr + *offset as u64,
+                    types,
+                    *membertype,
+                    recurse + 1,
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
 fn render_section(ui: &mut egui::Ui, start: u64, memory: &Vec<u8>, name: &String) {
     ui.horizontal(|ui| {
         let line_height = 17f32;
         let (_rect, _) = ui.allocate_exact_size(
-            Vec2::new(20.0, line_height + memory.len() as f32 * line_height),
+            Vec2::new(80.0, line_height + memory.len() as f32 * line_height),
             egui::Sense::hover(),
         );
         // ui.painter().rect(
@@ -410,6 +495,43 @@ fn render_section(ui: &mut egui::Ui, start: u64, memory: &Vec<u8>, name: &String
             ui.separator();
         });
     });
+}
+
+/// return type: (addr, type_index)
+fn get_all_ptrs(datatypes: &DataType, type_index: usize, addr: u64) -> Vec<(u64, usize)> {
+    match &datatypes.0[type_index].1 {
+        TypeName::Name {
+            name: _,
+            byte_size: _,
+        } => vec![],
+        TypeName::Arr { arr_type, count } => {
+            let mut ptrs = vec![];
+            for i in 0..count.iter().cloned().reduce(|e1, e2| e1 * e2).unwrap() {
+                ptrs.append(&mut get_all_ptrs(
+                    datatypes,
+                    *arr_type,
+                    addr + i as u64 * get_byte_size(datatypes, *arr_type) as u64,
+                ));
+            }
+            ptrs
+        }
+        TypeName::Ref { index: _ } => vec![(addr, type_index)],
+        TypeName::ProductType {
+            name: _,
+            members,
+            byte_size: _,
+        } => {
+            let mut ptrs = vec![];
+            for (_, type_index, offset) in members {
+                ptrs.append(&mut get_all_ptrs(
+                    datatypes,
+                    *type_index,
+                    addr + *offset as u64,
+                ));
+            }
+            ptrs
+        }
+    }
 }
 
 impl VariableWindow {
@@ -469,12 +591,13 @@ impl VariableWindow {
                                                     variable
                                                         .type_name
                                                         .clone()
-                                                        .unwrap_or(
+                                                        .unwrap_or(DataType(vec![(
+                                                            0,
                                                             stackium_shared::TypeName::Name {
                                                                 name: "??".to_owned(),
                                                                 byte_size: 0
                                                             }
-                                                        )
+                                                        )]))
                                                         .to_string()
                                                 ))
                                                 .wrap(false),
@@ -575,201 +698,283 @@ impl VariableWindow {
                                         .map(|v| v.clone())
                                         .collect();
 
-                                    ui.with_layout(egui::Layout::top_down(egui::Align::TOP),
-                                            |ui| {
-                                        for (ivar, var) in vars
-                                        .iter()
-                                        .chain(
-                                            [
-                                                Variable {
-                                                    name: Some("Return Address".to_owned()),
-                                                    type_name: Some(
-                                                        stackium_shared::TypeName::Ref(Box::from(
-                                                            stackium_shared::TypeName::Name {
-                                                                name: "void".to_owned(),
-                                                                byte_size: 0,
-                                                            },
-                                                        )),
-                                                    ),
-                                                    value: None,
-                                                    file: None,
-                                                    line: None,
-                                                    addr: Some(registers.rbp + 8),
-                                                    high_pc: 0,
-                                                    low_pc: 0,
-                                                },
-                                                Variable {
-                                                    name: Some("Calling Base Pointer".to_owned()),
-                                                    type_name: Some(
-                                                        stackium_shared::TypeName::Ref(Box::from(
-                                                            stackium_shared::TypeName::Name {
-                                                                name: "void".to_owned(),
-                                                                byte_size: 0,
-                                                            },
-                                                        )),
-                                                    ),
-                                                    value: None,
-                                                    file: None,
-                                                    line: None,
-                                                    addr: Some(registers.rbp),
-                                                    high_pc: 0,
-                                                    low_pc: 0,
-                                                },
-                                            ]
-                                            .iter(),
-                                        )
-                                        .enumerate()
-                                    {
-                                        render_variable(
-                                            ui,
-                                            &rect,
-                                            registers,
-                                            rsp_offset,
-                                            heightpad,
-                                            height,
-                                            colors[ivar % colors.len()],
-                                            &mut draw_ref_count,
-                                            var,
-                                            0f32,
-                                            stack,
-                                        );
-                                                if let (Some(addr), Some(TypeName::Ref(reftype))) =
+                                    // addr, value, types, type_index
+                                    let mut heap_vars = Vec::<(u64, u64, DataType, usize)>::new();
+                                    ui.with_layout(
+                                        egui::Layout::top_down(egui::Align::TOP),
+                                        |ui| {
+                                            for (ivar, var) in vars
+                                                .iter()
+                                                .chain(
+                                                    [
+                                                        Variable {
+                                                            name: Some("Return Address".to_owned()),
+                                                            type_name: Some(DataType(vec![(
+                                                                0,
+                                                                stackium_shared::TypeName::Ref {
+                                                                    index: None,
+                                                                },
+                                                            )])),
+                                                            value: None,
+                                                            file: None,
+                                                            line: None,
+                                                            addr: Some(registers.rbp + 8),
+                                                            high_pc: 0,
+                                                            low_pc: 0,
+                                                        },
+                                                        Variable {
+                                                            name: Some(
+                                                                "Calling Base Pointer".to_owned(),
+                                                            ),
+                                                            type_name: Some(DataType(vec![(
+                                                                0,
+                                                                stackium_shared::TypeName::Ref {
+                                                                    index: None,
+                                                                },
+                                                            )])),
+                                                            value: None,
+                                                            file: None,
+                                                            line: None,
+                                                            addr: Some(registers.rbp),
+                                                            high_pc: 0,
+                                                            low_pc: 0,
+                                                        },
+                                                    ]
+                                                    .iter(),
+                                                )
+                                                .enumerate()
+                                            {
+                                                render_variable(
+                                                    ui,
+                                                    &rect,
+                                                    registers,
+                                                    rsp_offset,
+                                                    heightpad,
+                                                    height,
+                                                    colors[ivar % colors.len()],
+                                                    &mut draw_ref_count,
+                                                    var,
+                                                    0f32,
+                                                    stack,
+                                                );
+                                                if let (Some(addr), Some(datatype)) =
                                                     (&var.addr, &var.type_name)
                                                 {
-                                                    let value = read_value_stack(
-                                                        *addr, registers, rsp_offset, &stack,
-                                                    );
-                                                    if value >= registers.rsp - rsp_offset
-                                                        && value <= registers.rbp + 16
+                                                    for (addr, typeindex) in
+                                                        get_all_ptrs(datatype, 0, *addr)
                                                     {
-                                                        let current_y = get_y_from_addr(
-                                                            &rect,
-                                                            registers.rsp,
-                                                            rsp_offset,
-                                                            heightpad,
-                                                            *addr + 2,
-                                                        ) - 10.0;
-                                                        let dst_y = get_y_from_addr(
-                                                            &rect,
-                                                            registers.rsp,
-                                                            rsp_offset,
-                                                            heightpad,
-                                                            value,
+                                                        let value = read_value_stack(
+                                                            addr, registers, rsp_offset, &stack,
                                                         );
-                                                        render_ref_arrow(
-                                                            ui,
-                                                            &rect,
-                                                            &mut draw_ref_count,
-                                                            colors[ivar % colors.len()],
-                                                            current_y,
-                                                            dst_y,
-                                                            false,
-                                                            0.0,
-                                                        );
-                                                    } else if let Some((start, end, name, region)) = self
-                                                        .additional_loaded_sections
-                                                        .iter()
-                                                        .find(|(start, end, _, _)| {
-                                                            value >= *start && value <= *end
-                                                        })
-                                                    {
-                                                        // everything ok 👍
-                                                        // draw arrow
-
-                                                        let current_y = get_y_from_addr(
-                                                            &rect,
-                                                            registers.rsp,
-                                                            rsp_offset,
-                                                            heightpad,
-                                                            *addr + 2,
-                                                        ) - 10.0;
-                                                        let dst_y = get_section_y(&rect, &self.additional_loaded_sections, value);
-                                                        render_ref_arrow(
-                                                            ui,
-                                                            &rect,
-                                                            &mut draw_ref_count,
-                                                            colors[ivar % colors.len()],
-                                                            current_y,
-                                                            dst_y,
-                                                            true,
-                                                            42.0,
-                                                        )
-                                                        // if let Some(Ok(region)) = region.ready() {
-                                                        //     render_section(ui, *start, region, name);
-                                                        // }
-                                                    } else if let Some(Ok(mapping)) =
-                                                        self.mapping.ready()
-                                                    {
-                                                        if let Some(m) =
-                                                            mapping.iter().find(|map| {
-                                                                map.from <= value && value <= map.to
+                                                        if value >= registers.rsp - rsp_offset
+                                                            && value <= registers.rbp + 16
+                                                        {
+                                                            let current_y = get_y_from_addr(
+                                                                &rect,
+                                                                registers.rsp,
+                                                                rsp_offset,
+                                                                heightpad,
+                                                                addr + 2,
+                                                            ) - 10.0;
+                                                            let dst_y = get_y_from_addr(
+                                                                &rect,
+                                                                registers.rsp,
+                                                                rsp_offset,
+                                                                heightpad,
+                                                                value,
+                                                            );
+                                                            render_ref_arrow(
+                                                                ui,
+                                                                &rect,
+                                                                &mut draw_ref_count,
+                                                                colors[ivar % colors.len()],
+                                                                current_y,
+                                                                dst_y,
+                                                                false,
+                                                                0.0,
+                                                            );
+                                                        } else if let Some((
+                                                            start,
+                                                            end,
+                                                            name,
+                                                            region,
+                                                        )) = self
+                                                            .additional_loaded_sections
+                                                            .iter()
+                                                            .find(|(start, end, _, _)| {
+                                                                value >= *start && value <= *end
                                                             })
                                                         {
-                                                            self.additional_loaded_sections.push((
-                                                                value - 16,
-                                                                value + 16,
-                                                                m.mapped.clone(),
-                                                                dispatch!(
-                                                                    self.backend_url.clone(),
-                                                                    Command::ReadMemory(
-                                                                        value - 16,
-                                                                        32
-                                                                    ),
-                                                                    Memory
-                                                                ),
-                                                            ));
-                                                            self.additional_loaded_sections.sort_by(|a,b| b.0.partial_cmp(&a.0).unwrap());
-                                                        }
-                                                    } else {
+                                                            // everything ok 👍
+                                                            // draw arrow
 
-                                                        let current_y = get_y_from_addr(
-                                                            &rect,
-                                                            registers.rsp,
-                                                            rsp_offset,
-                                                            heightpad,
-                                                            *addr + 2,
-                                                        ) - 10.0;
-                                                        render_invalid_ptr_arrow(ui, &rect, current_y, colors[ivar % colors.len()])
+                                                            let current_y = get_y_from_addr(
+                                                                &rect,
+                                                                registers.rsp,
+                                                                rsp_offset,
+                                                                heightpad,
+                                                                addr + 2,
+                                                            ) - 10.0;
+                                                            let dst_y = get_section_y(
+                                                                &rect,
+                                                                &self.additional_loaded_sections,
+                                                                value,
+                                                            );
+                                                            heap_vars.push((
+                                                                addr,
+                                                                value,
+                                                                datatype.clone(),
+                                                                typeindex,
+                                                            ));
+                                                            render_ref_arrow(
+                                                                ui,
+                                                                &rect,
+                                                                &mut draw_ref_count,
+                                                                colors[ivar % colors.len()],
+                                                                current_y,
+                                                                dst_y,
+                                                                true,
+                                                                98.0,
+                                                            )
+                                                            // if let Some(Ok(region)) = region.ready() {
+                                                            //     render_section(ui, *start, region, name);
+                                                            // }
+                                                        } else if let Some(Ok(mapping)) =
+                                                            self.mapping.ready()
+                                                        {
+                                                            if let Some(m) =
+                                                                mapping.iter().find(|map| {
+                                                                    map.from <= value
+                                                                        && value <= map.to
+                                                                })
+                                                            {
+                                                                let size = if let TypeName::Ref {
+                                                                    index: Some(index),
+                                                                } =
+                                                                    datatype.0[typeindex].1
+                                                                {
+                                                                    get_byte_size(datatype, index)
+                                                                } else {
+                                                                    8
+                                                                };
+                                                                // Merge if near block is already in sections
+                                                                if let Some(pos) = self
+                                                                    .additional_loaded_sections
+                                                                    .iter()
+                                                                    .position(
+                                                                        |(start, end, _, _)| {
+                                                                            (value + size as u64 + 8
+                                                                                >= *start
+                                                                                && value <= *end) || (value >= *start && value - size as u64 - 8 <= *end)
+                                                                        },
+                                                                    )
+                                                                {
+                                                                    if value + size as u64 + 8 >= self.additional_loaded_sections[pos].0 && value <= self.additional_loaded_sections[pos].1 {
+                                                                        self.additional_loaded_sections[pos].0 -= size as u64 + 12;
+                                                                    } else if value - size as u64 - 8 <= self.additional_loaded_sections[pos].1 && value >= self.additional_loaded_sections[pos].0{
+                                                                        self.additional_loaded_sections[pos].1 += 2 * size as u64 + 12;
+                                                                    }
+                                                                    ui.label(format!("{:#x}-{:#x}", self.additional_loaded_sections[pos].0, self.additional_loaded_sections[pos].1));
+                                                                    self.additional_loaded_sections[pos].3 = dispatch!(self.backend_url.clone(), Command::ReadMemory(
+                                                                        self.additional_loaded_sections[pos].0,
+                                                                        self.additional_loaded_sections[pos].1 - self.additional_loaded_sections[pos].0
+                                                                    ), Memory);
+                                                                } else {
+                                                                self.additional_loaded_sections
+                                                                    .push((
+                                                                        value - 16,
+                                                                        value + size as u64 + 4,
+                                                                        m.mapped.clone(),
+                                                                        dispatch!(
+                                                                            self.backend_url
+                                                                                .clone(),
+                                                                            Command::ReadMemory(
+                                                                                value - 16,
+                                                                                16 + size as u64
+                                                                                    + 4,
+                                                                            ),
+                                                                            Memory
+                                                                        ),
+                                                                    ));
+                                                                self.additional_loaded_sections
+                                                                    .sort_by(|a, b| {
+                                                                        b.0.partial_cmp(&a.0)
+                                                                            .unwrap()
+                                                                    });
+                                                                    }
+                                                            }
+                                                        } else {
+                                                            let current_y = get_y_from_addr(
+                                                                &rect,
+                                                                registers.rsp,
+                                                                rsp_offset,
+                                                                heightpad,
+                                                                addr + 2,
+                                                            ) - 10.0;
+                                                            render_invalid_ptr_arrow(
+                                                                ui,
+                                                                &rect,
+                                                                current_y,
+                                                                colors[ivar % colors.len()],
+                                                            )
+                                                        }
                                                     }
                                                 }
-                                                                                  if let (Some(typename), Some(addr)) =
-                                            (&var.type_name, var.addr)
-                                        {
-                                            let size = get_byte_size(typename);
-                                            let bottom = get_y_from_addr(
-                                                &rect,
-                                                registers.rsp,
-                                                rsp_offset,
-                                                heightpad,
-                                                addr,
-                                            );
+                                                if let (Some(typename), Some(addr)) =
+                                                    (&var.type_name, var.addr)
+                                                {
+                                                    let size = get_byte_size(typename, 0);
+                                                    let bottom = get_y_from_addr(
+                                                        &rect,
+                                                        registers.rsp,
+                                                        rsp_offset,
+                                                        heightpad,
+                                                        addr,
+                                                    );
 
-                                            let top = get_y_from_addr(
-                                                &rect,
-                                                registers.rsp,
-                                                rsp_offset,
-                                                heightpad,
-                                                addr + size as u64,
-                                            );
-                                            if ui.rect_contains_pointer(
-                                                egui::Rect::from_x_y_ranges(
-                                                    0f32..=100000f32,
-                                                    top..=bottom,
-                                                ),
-                                            ) {
-                                                self.hover_text = Some(typename.to_string());
+                                                    let top = get_y_from_addr(
+                                                        &rect,
+                                                        registers.rsp,
+                                                        rsp_offset,
+                                                        heightpad,
+                                                        addr + size as u64,
+                                                    );
+                                                    if ui.rect_contains_pointer(
+                                                        egui::Rect::from_x_y_ranges(
+                                                            0f32..=100000f32,
+                                                            top..=bottom,
+                                                        ),
+                                                    ) {
+                                                        self.hover_text =
+                                                            Some(typename.to_string());
+                                                    }
+                                                }
                                             }
-                                        }
-                                    }
 
-                                    for (start, _, name, section) in self.additional_loaded_sections.iter() {
-                                        if let Some(Ok(section)) = section.ready() {
-                                            render_section(ui, *start, section, name);
-                                        }
-                                    }
-
-  },
-                                        );
+                                            for (start, _, name, section) in
+                                                self.additional_loaded_sections.iter()
+                                            {
+                                                if let Some(Ok(section)) = section.ready() {
+                                                    render_section(ui, *start, section, name);
+                                                }
+                                            }
+                                            for (addr, value, datatype, index) in &heap_vars {
+                                                if let TypeName::Ref { index: Some(index) } =
+                                                    datatype.0[*index].1
+                                                {
+                                                    render_heap_variable(
+                                                        ui,
+                                                        &rect,
+                                                        &self.additional_loaded_sections,
+                                                        *value,
+                                                        datatype,
+                                                        index,
+                                                        0
+                                                    );
+                                                }
+                                            }
+                                        },
+                                    );
                                     ui.painter().arrow(
                                         Pos2::new(
                                             rect.min.x + 8.0,

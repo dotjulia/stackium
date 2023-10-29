@@ -110,13 +110,13 @@ fn main() -> Result<(), DebugError> {
             Ok(fr) => match fr {
                 Parent { child: _ } => start_webserver(debugger),
                 Child => {
-                    match stackium_ui::start_ui() {
-                        Ok(_) => {}
-                        Err(e) => {
-                            println!("{:?}", e);
-                            panic!();
-                        }
-                    }
+                    // match stackium_ui::start_ui() {
+                    //     Ok(_) => {}
+                    //     Err(e) => {
+                    //         println!("{:?}", e);
+                    //         panic!();
+                    //     }
+                    // }
                     Ok(())
                 }
             },

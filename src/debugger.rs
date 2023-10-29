@@ -70,6 +70,16 @@ macro_rules! find_entry_with_offset {
     };
 }
 
+fn unit_offset<T: gimli::Reader>(
+    offset: gimli::AttributeValue<T>,
+) -> Option<<T as gimli::Reader>::Offset> {
+    if let gimli::AttributeValue::UnitRef(r) = offset {
+        Some(r.0)
+    } else {
+        None
+    }
+}
+
 impl Debugger {
     pub fn new(child: Pid, object_file: PathBuf) -> Self {
         let load_section = |id: gimli::SectionId| -> Result<Arc<Vec<u8>>, gimli::Error> {
@@ -170,27 +180,34 @@ impl Debugger {
                             gimli::DW_TAG_pointer_type => {
                                 if let Ok(Some(type_field)) = node.entry().attr(gimli::DW_AT_type) {
                                     //TODO: Find fix for recursive types
-                                    let index = known_types
-                                        .0
-                                        .iter()
-                                        .position(|e| e.0 == type_field.offset_value().unwrap());
+                                    println!(
+                                        "Resolving pointer for type {:?}",
+                                        unit_offset(type_field.value())
+                                    );
+                                    println!("Known types: {:?}", known_types);
+                                    let index = known_types.0.iter().position(|e| {
+                                        e.0 == unit_offset(type_field.value()).unwrap()
+                                    });
                                     if let Some(index) = index {
                                         let mut ret_vec = known_types.clone();
+                                        println!("Type already known");
                                         ret_vec.0.push((
-                                            find_offset.0,
+                                            unit_offset(type_field.value()).unwrap(),
                                             TypeName::Ref { index: Some(index) },
                                         ));
                                         return Ok(Some(ret_vec));
                                     }
-                                    let next_index = known_types.0.len();
-                                    let sub_type =
-                                        debugger.decode_type(type_field.value(), known_types)?;
+                                    // [Current Types] + Ptr Type + [Types]
+                                    let next_index = known_types.0.len() + 1;
                                     known_types.0.push((
                                         find_offset.0,
                                         TypeName::Ref {
                                             index: Some(next_index),
                                         },
                                     ));
+                                    let sub_type = debugger
+                                        .decode_type(type_field.value(), known_types.clone())?;
+                                    known_types.0 = sub_type.0;
                                     return Ok(Some(known_types));
                                 } else {
                                     known_types
@@ -200,7 +217,6 @@ impl Debugger {
                             }
                             gimli::DW_TAG_array_type => {
                                 if let Ok(Some(type_field)) = node.entry().attr(gimli::DW_AT_type) {
-                                    let sub_type = debugger.decode_type(type_field.value())?;
                                     let mut children_iter = node.children();
                                     let mut lengths = vec![];
                                     while let Ok(Some(child)) = children_iter.next() {
@@ -212,14 +228,35 @@ impl Debugger {
                                             println!("Found child entry but failed getting count");
                                         }
                                     }
-                                    let mut ret_val = sub_type;
-                                    for length in lengths.iter().rev() {
-                                        ret_val = TypeName::Arr {
-                                            arr_type: Box::from(ret_val),
-                                            count: *length,
-                                        };
-                                    }
-                                    known_types.0.push(ret_val);
+                                    known_types.0.push((
+                                        find_offset.0,
+                                        TypeName::Name {
+                                            name: String::new(),
+                                            byte_size: 0,
+                                        },
+                                    ));
+                                    let arr_index = known_types.0.len() - 1;
+
+                                    let sub_type = if let Some(sub_type) =
+                                        known_types.0.iter().position(|t| {
+                                            t.0 == unit_offset(type_field.value()).unwrap()
+                                        }) {
+                                        sub_type
+                                    } else {
+                                        let sub_type = debugger
+                                            .decode_type(type_field.value(), known_types.clone())?;
+                                        let i = known_types.0.len();
+                                        known_types.0 = sub_type.0;
+                                        i
+                                    };
+
+                                    known_types.0[arr_index] = (
+                                        find_offset.0,
+                                        TypeName::Arr {
+                                            arr_type: sub_type,
+                                            count: lengths,
+                                        },
+                                    );
                                     return Ok(Some(known_types));
                                 } else {
                                     println!("Failed getting array type");
@@ -237,8 +274,20 @@ impl Debugger {
                                         .unwrap()
                                         .to_string();
                                     let byte_size = byte_size.udata_value().unwrap();
+                                    // Push Structure first in case of self referential struct
+                                    println!("Decoding struct: {} {:?}", &name, known_types);
+
+                                    known_types.0.push((
+                                        find_offset.0,
+                                        TypeName::ProductType {
+                                            name: name.clone(),
+                                            members: vec![],
+                                            byte_size: byte_size as usize,
+                                        },
+                                    ));
+                                    let struct_index = known_types.0.len() - 1;
                                     let mut children_iter = node.children();
-                                    let mut types: Vec<(String, TypeName, usize)> = vec![];
+                                    let mut types: Vec<(String, usize, usize)> = vec![];
                                     while let Ok(Some(child)) = children_iter.next() {
                                         if let (
                                             Ok(Some(name)),
@@ -255,19 +304,35 @@ impl Debugger {
                                                 .to_string()
                                                 .unwrap()
                                                 .to_string();
-                                            let membertype =
-                                                debugger.decode_type(typeoffset.value())?;
+                                            let index = if let Some(index) =
+                                                known_types.0.iter().position(|t| {
+                                                    t.0 == unit_offset(typeoffset.value()).unwrap()
+                                                }) {
+                                                index
+                                            } else {
+                                                let membertype = debugger.decode_type(
+                                                    typeoffset.value(),
+                                                    known_types.clone(),
+                                                )?;
+                                                let i = known_types.0.len();
+                                                known_types.0 = membertype.0;
+                                                i
+                                            };
                                             let byteoffset = byteoffset.udata_value().unwrap();
-                                            types.push((name, membertype, byteoffset as usize));
+                                            types.push((name, index, byteoffset as usize));
                                         } else {
                                             println!("Failed to decode member type");
                                         }
                                     }
-                                    return Ok(Some(TypeName::ProductType {
-                                        name,
-                                        members: types,
-                                        byte_size: byte_size as usize,
-                                    }));
+                                    known_types.0[struct_index] = (
+                                        find_offset.0,
+                                        TypeName::ProductType {
+                                            name,
+                                            members: types,
+                                            byte_size: byte_size as usize,
+                                        },
+                                    );
+                                    return Ok(Some(known_types));
                                 } else {
                                     println!("Failed to get struct name");
                                 }
@@ -281,7 +346,13 @@ impl Debugger {
                     }
                     let mut children = node.children();
                     while let Some(child) = children.next()? {
-                        match process_tree(debugger, child, unit_header, find_offset)? {
+                        match process_tree(
+                            debugger,
+                            child,
+                            unit_header,
+                            find_offset,
+                            known_types.clone(),
+                        )? {
                             Some(t) => {
                                 return Ok(Some(t));
                             }
@@ -290,7 +361,7 @@ impl Debugger {
                     }
                     Ok(None)
                 }
-                if let Some(t) = process_tree(self, root, &unit_header, r)? {
+                if let Some(t) = process_tree(self, root, &unit_header, r, known_types.clone())? {
                     return Ok(t);
                 }
             }
@@ -421,7 +492,7 @@ impl Debugger {
                     var.addr = get_piece_addr(&pieces[0]);
                     var.value = self.retrieve_pieces(pieces).ok();
                 }
-                var.type_name = self.decode_type(sub_entry.attr(gimli::DW_AT_type)?.unwrap().value()).ok();
+                var.type_name = self.decode_type(sub_entry.attr(gimli::DW_AT_type)?.unwrap().value(), DataType(vec![])).ok();
 
                 if let Some(name) = sub_entry.attr(gimli::DW_AT_name)? {
                     if let Some(name) = name.string_value(&self.dwarf.debug_str) {
