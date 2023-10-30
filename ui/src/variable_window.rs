@@ -60,12 +60,20 @@ fn render_ref_arrow(
     to: f32,
     invert: bool,
     invert_length: f32,
+    invert_origin: bool,
 ) {
     // Horizontal line to vert
     ui.painter().line_segment(
         [
             Pos2::new(rect.max.x - 10.0 - *draw_ref_count as f32 * 15.0, from),
-            Pos2::new(rect.min.x + 15.0, from),
+            Pos2::new(
+                if invert_origin {
+                    rect.min.x + invert_length + 140.
+                } else {
+                    rect.min.x + 15.0
+                },
+                from,
+            ),
         ],
         Stroke { width: 3.0, color },
     );
@@ -407,6 +415,28 @@ fn get_section_y(rect: &egui::Rect, sections: &Vec<Section>, addr: u64) -> f32 {
     rect.min.y + sum - line_height / 2.0
 }
 
+fn read_heap_value(addr: u64, sections: &Vec<Section>) -> Option<u64> {
+    for (start, end, _, data) in sections.iter() {
+        if addr >= *start && addr <= *end {
+            if let Some(Ok(data)) = data.ready() {
+                let offset = addr - *start;
+                let offset = offset as usize;
+
+                let value = data[offset] as u64
+                    | (data[offset + 1] as u64) << 8
+                    | (data[offset + 2] as u64) << 16
+                    | (data[offset + 3] as u64) << 24
+                    | (data[offset + 4] as u64) << 32
+                    | (data[offset + 5] as u64) << 40
+                    | (data[offset + 6] as u64) << 48
+                    | (data[offset + 7] as u64) << 56;
+                return Some(value);
+            }
+        }
+    }
+    None
+}
+
 //TODO: maybe return possible section to load and factor out section loading code to seperate function in render_stack function
 fn render_heap_variable(
     ui: &mut egui::Ui,
@@ -416,6 +446,7 @@ fn render_heap_variable(
     types: &DataType,
     type_index: usize,
     recurse: usize,
+    draw_ref_count: &mut i32,
 ) {
     let top = get_section_y(
         rect,
@@ -434,7 +465,10 @@ fn render_heap_variable(
         true,
     );
     match &types.0[type_index].1 {
-        TypeName::Arr { arr_type, count } => todo!(),
+        TypeName::Arr {
+            arr_type: _,
+            count: _,
+        } => todo!(), //TODO: arrays on the heap
         TypeName::ProductType {
             name: _,
             members,
@@ -449,7 +483,29 @@ fn render_heap_variable(
                     types,
                     *membertype,
                     recurse + 1,
+                    draw_ref_count,
                 );
+            }
+        }
+        TypeName::Ref { index: _ } => {
+            let value = read_heap_value(addr, sections);
+            if let Some(value) = value {
+                if sections
+                    .iter()
+                    .any(|(start, end, _, _)| value >= *start && value <= *end)
+                {
+                    render_ref_arrow(
+                        ui,
+                        rect,
+                        draw_ref_count,
+                        Color32::RED,
+                        (top + bottom) / 2.0 + 10.0,
+                        get_section_y(rect, sections, value),
+                        true,
+                        98.0,
+                        true,
+                    );
+                }
             }
         }
         _ => {}
@@ -792,6 +848,7 @@ impl VariableWindow {
                                                                 dst_y,
                                                                 false,
                                                                 0.0,
+                                                                false
                                                             );
                                                         } else if let Some((
                                                             start,
@@ -820,12 +877,14 @@ impl VariableWindow {
                                                                 &self.additional_loaded_sections,
                                                                 value,
                                                             );
-                                                            heap_vars.push((
-                                                                addr,
-                                                                value,
-                                                                datatype.clone(),
-                                                                typeindex,
-                                                            ));
+                                                            if !heap_vars.iter().any(|(_, v, _, _)| *v == value) {
+                                                                heap_vars.push((
+                                                                    addr,
+                                                                    value,
+                                                                    datatype.clone(),
+                                                                    typeindex,
+                                                                ));
+                                                            }
                                                             render_ref_arrow(
                                                                 ui,
                                                                 &rect,
@@ -835,6 +894,7 @@ impl VariableWindow {
                                                                 dst_y,
                                                                 true,
                                                                 98.0,
+                                                                false
                                                             )
                                                             // if let Some(Ok(region)) = region.ready() {
                                                             //     render_section(ui, *start, region, name);
@@ -958,7 +1018,7 @@ impl VariableWindow {
                                                     render_section(ui, *start, section, name);
                                                 }
                                             }
-                                            for (addr, value, datatype, index) in &heap_vars {
+                                            for (i, (addr, value, datatype, index)) in heap_vars.iter().enumerate() {
                                                 if let TypeName::Ref { index: Some(index) } =
                                                     datatype.0[*index].1
                                                 {
@@ -969,7 +1029,8 @@ impl VariableWindow {
                                                         *value,
                                                         datatype,
                                                         index,
-                                                        0
+                                                        0,
+                                                        &mut draw_ref_count
                                                     );
                                                 }
                                             }
