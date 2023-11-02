@@ -8,6 +8,7 @@ mod code_window;
 mod control_window;
 mod debugger_window;
 mod frame_history;
+mod graph_window;
 mod location;
 mod map_window;
 mod register_window;

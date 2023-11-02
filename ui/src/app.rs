@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use egui::{Align, Layout, TextureHandle};
 use poll_promise::Promise;
 use stackium_shared::{Command, CommandOutput, DebugMeta};
@@ -11,6 +9,7 @@ use crate::{
     command::dispatch,
     control_window::ControlWindow,
     debugger_window::{DebuggerWindow, Metadata},
+    graph_window::GraphWindow,
     location::LocationWindow,
     map_window::MapWindow,
     register_window::RegisterWindow,
@@ -80,9 +79,14 @@ impl StackiumApp {
                         body: Box::from(ControlWindow::new(backend_url.clone())),
                     },
                     DebuggerWindow {
-                        title: "Variables",
-                        is_active: true,
+                        title: "Memory",
+                        is_active: false,
                         body: Box::from(VariableWindow::new(backend_url.clone())),
+                    },
+                    DebuggerWindow {
+                        title: "Graph",
+                        is_active: true,
+                        body: Box::from(GraphWindow::new(backend_url.clone())),
                     },
                     DebuggerWindow {
                         title: "Registers",

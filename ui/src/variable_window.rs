@@ -173,7 +173,7 @@ fn render_var_line(
         );
     }
 }
-fn get_byte_size(types: &DataType, index: usize) -> usize {
+pub fn get_byte_size(types: &DataType, index: usize) -> usize {
     match &types.0[index].1 {
         TypeName::Name { name: _, byte_size } => *byte_size,
         TypeName::Arr { arr_type, count } => {
@@ -437,7 +437,15 @@ fn read_heap_value(addr: u64, sections: &Vec<Section>) -> Option<u64> {
     None
 }
 
+const COLORS: [Color32; 4] = [
+    Color32::DARK_RED,
+    Color32::from_rgb(169, 158, 0),
+    Color32::DARK_GREEN,
+    Color32::DARK_BLUE,
+];
+
 //TODO: maybe return possible section to load and factor out section loading code to seperate function in render_stack function
+// (size,addr)
 fn render_heap_variable(
     ui: &mut egui::Ui,
     rect: &egui::Rect,
@@ -446,8 +454,9 @@ fn render_heap_variable(
     types: &DataType,
     type_index: usize,
     recurse: usize,
+    color_walk: usize,
     draw_ref_count: &mut i32,
-) {
+) -> Vec<(usize, u64)> {
     let top = get_section_y(
         rect,
         sections,
@@ -461,9 +470,10 @@ fn render_heap_variable(
         top,
         bottom,
         &types.0[type_index].1.to_string(),
-        Color32::RED,
+        COLORS[color_walk as usize % COLORS.len()],
         true,
     );
+    let mut ret_val = vec![];
     match &types.0[type_index].1 {
         TypeName::Arr {
             arr_type: _,
@@ -475,7 +485,7 @@ fn render_heap_variable(
             byte_size: _,
         } => {
             for (_, membertype, offset) in members {
-                render_heap_variable(
+                ret_val.append(&mut render_heap_variable(
                     ui,
                     rect,
                     sections,
@@ -483,33 +493,66 @@ fn render_heap_variable(
                     types,
                     *membertype,
                     recurse + 1,
+                    color_walk,
                     draw_ref_count,
-                );
+                ));
             }
         }
-        TypeName::Ref { index: _ } => {
+        TypeName::Ref { index } => {
             let value = read_heap_value(addr, sections);
             if let Some(value) = value {
                 if sections
                     .iter()
                     .any(|(start, end, _, _)| value >= *start && value <= *end)
                 {
+                    // render recursively
+                    if let Some(index) = index {
+                        let size = get_byte_size(types, *index);
+                        if sections.iter().any(|(start, end, _, _)| {
+                            value as u64 + size as u64 >= *start
+                                && value as u64 + size as u64 <= *end
+                        }) {
+                            // type fits
+                            ret_val.append(&mut render_heap_variable(
+                                ui,
+                                rect,
+                                sections,
+                                value,
+                                types,
+                                *index,
+                                0,
+                                color_walk + 1,
+                                draw_ref_count,
+                            ));
+                        } else {
+                            // type does not fit
+                            // request section to be loaded
+                            ret_val.push((size, value));
+                        }
+                    }
                     render_ref_arrow(
                         ui,
                         rect,
                         draw_ref_count,
-                        Color32::RED,
+                        COLORS[color_walk % COLORS.len()],
                         (top + bottom) / 2.0 + 10.0,
                         get_section_y(rect, sections, value),
                         true,
                         98.0,
                         true,
                     );
+                } else {
+                    if let Some(index) = index {
+                        ret_val.push((get_byte_size(types, *index), value));
+                    } else {
+                        ret_val.push((8, value));
+                    }
                 }
             }
         }
         _ => {}
     }
+    ret_val
 }
 
 fn render_section(ui: &mut egui::Ui, start: u64, memory: &Vec<u8>, name: &String) {
@@ -589,13 +632,52 @@ fn get_all_ptrs(datatypes: &DataType, type_index: usize, addr: u64) -> Vec<(u64,
         }
     }
 }
+macro_rules! load_section {
+    ($backend_url:expr, $sections:expr, $m:expr, $size:expr, $value:expr,) => {
+        // Merge if near block is already in $sections
+        if $sections
+            .iter()
+            .any(|(start, end, _, _)| $value >= *start && $value + $size as u64 <= *end)
+        {
+            // don't load
+        } else {
+            if let Some(pos) = $sections.iter().position(|(start, end, _, _)| {
+                ($value + $size as u64 + 8 >= *start && $value <= *end)
+                    || ($value >= *start && $value - 16 <= *end)
+            }) {
+                if $value + $size as u64 + 8 >= $sections[pos].0 && $value <= $sections[pos].1 {
+                    $sections[pos].0 -= $size as u64 + 12;
+                } else if $value - 16 <= $sections[pos].1 && $value >= $sections[pos].0 {
+                    $sections[pos].1 += $size as u64 + 16;
+                }
+                $sections[pos].3 = dispatch!(
+                    $backend_url,
+                    Command::ReadMemory($sections[pos].0, $sections[pos].1 - $sections[pos].0),
+                    Memory
+                );
+            } else {
+                $sections.push((
+                    $value - 16,
+                    $value + $size as u64 + 4,
+                    $m.mapped.clone(),
+                    dispatch!(
+                        $backend_url,
+                        Command::ReadMemory($value - 16, 16 + $size as u64 + 4,),
+                        Memory
+                    ),
+                ));
+                $sections.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+            }
+        }
+    };
+}
 
 impl VariableWindow {
     pub fn new(backend_url: Url) -> Self {
         let mut s = Self {
             variables: Promise::from_ready(Err(String::new())),
             backend_url,
-            active_tab: ActiveTab::VariableList,
+            active_tab: ActiveTab::StackView,
             registers: Promise::from_ready(Err(String::new())),
             stack: None,
             hover_text: None,
@@ -737,12 +819,6 @@ impl VariableWindow {
                                 }
 
                                 // ui.painter().rect_filled(rect, 0.0, egui::Color32::WHITE);
-                                let colors = [
-                                    Color32::DARK_RED,
-                                    Color32::from_rgb(169, 158, 0),
-                                    Color32::DARK_GREEN,
-                                    Color32::DARK_BLUE,
-                                ];
                                 let mut draw_ref_count = 0;
 
                                 if let Some(Ok(vars)) = self.variables.ready() {
@@ -807,7 +883,7 @@ impl VariableWindow {
                                                     rsp_offset,
                                                     heightpad,
                                                     height,
-                                                    colors[ivar % colors.len()],
+                                                    COLORS[ivar % COLORS.len()],
                                                     &mut draw_ref_count,
                                                     var,
                                                     0f32,
@@ -843,12 +919,12 @@ impl VariableWindow {
                                                                 ui,
                                                                 &rect,
                                                                 &mut draw_ref_count,
-                                                                colors[ivar % colors.len()],
+                                                                COLORS[ivar % COLORS.len()],
                                                                 current_y,
                                                                 dst_y,
                                                                 false,
                                                                 0.0,
-                                                                false
+                                                                false,
                                                             );
                                                         } else if let Some((
                                                             start,
@@ -859,7 +935,13 @@ impl VariableWindow {
                                                             .additional_loaded_sections
                                                             .iter()
                                                             .find(|(start, end, _, _)| {
-                                                                value >= *start && value <= *end
+                                                                value >= *start
+                                                                    && value
+                                                                        + get_byte_size(
+                                                                            datatype, typeindex,
+                                                                        )
+                                                                            as u64
+                                                                        <= *end
                                                             })
                                                         {
                                                             // everything ok 👍
@@ -877,7 +959,10 @@ impl VariableWindow {
                                                                 &self.additional_loaded_sections,
                                                                 value,
                                                             );
-                                                            if !heap_vars.iter().any(|(_, v, _, _)| *v == value) {
+                                                            if !heap_vars
+                                                                .iter()
+                                                                .any(|(_, v, _, _)| *v == value)
+                                                            {
                                                                 heap_vars.push((
                                                                     addr,
                                                                     value,
@@ -889,12 +974,12 @@ impl VariableWindow {
                                                                 ui,
                                                                 &rect,
                                                                 &mut draw_ref_count,
-                                                                colors[ivar % colors.len()],
+                                                                COLORS[ivar % COLORS.len()],
                                                                 current_y,
                                                                 dst_y,
                                                                 true,
                                                                 98.0,
-                                                                false
+                                                                false,
                                                             )
                                                             // if let Some(Ok(region)) = region.ready() {
                                                             //     render_section(ui, *start, region, name);
@@ -905,7 +990,12 @@ impl VariableWindow {
                                                             if let Some(m) =
                                                                 mapping.iter().find(|map| {
                                                                     map.from <= value
-                                                                        && value <= map.to
+                                                                        && value
+                                                                            + get_byte_size(
+                                                                                datatype, typeindex,
+                                                                            )
+                                                                                as u64
+                                                                            <= map.to
                                                                 })
                                                             {
                                                                 let size = if let TypeName::Ref {
@@ -917,66 +1007,28 @@ impl VariableWindow {
                                                                 } else {
                                                                     8
                                                                 };
-                                                                // Merge if near block is already in sections
-                                                                if let Some(pos) = self
-                                                                    .additional_loaded_sections
-                                                                    .iter()
-                                                                    .position(
-                                                                        |(start, end, _, _)| {
-                                                                            (value + size as u64 + 8
-                                                                                >= *start
-                                                                                && value <= *end) || (value >= *start && value - size as u64 - 8 <= *end)
-                                                                        },
-                                                                    )
-                                                                {
-                                                                    if value + size as u64 + 8 >= self.additional_loaded_sections[pos].0 && value <= self.additional_loaded_sections[pos].1 {
-                                                                        self.additional_loaded_sections[pos].0 -= size as u64 + 12;
-                                                                    } else if value - size as u64 - 8 <= self.additional_loaded_sections[pos].1 && value >= self.additional_loaded_sections[pos].0{
-                                                                        self.additional_loaded_sections[pos].1 += 2 * size as u64 + 12;
-                                                                    }
-                                                                    ui.label(format!("{:#x}-{:#x}", self.additional_loaded_sections[pos].0, self.additional_loaded_sections[pos].1));
-                                                                    self.additional_loaded_sections[pos].3 = dispatch!(self.backend_url.clone(), Command::ReadMemory(
-                                                                        self.additional_loaded_sections[pos].0,
-                                                                        self.additional_loaded_sections[pos].1 - self.additional_loaded_sections[pos].0
-                                                                    ), Memory);
-                                                                } else {
-                                                                self.additional_loaded_sections
-                                                                    .push((
-                                                                        value - 16,
-                                                                        value + size as u64 + 4,
-                                                                        m.mapped.clone(),
-                                                                        dispatch!(
-                                                                            self.backend_url
-                                                                                .clone(),
-                                                                            Command::ReadMemory(
-                                                                                value - 16,
-                                                                                16 + size as u64
-                                                                                    + 4,
-                                                                            ),
-                                                                            Memory
-                                                                        ),
-                                                                    ));
-                                                                self.additional_loaded_sections
-                                                                    .sort_by(|a, b| {
-                                                                        b.0.partial_cmp(&a.0)
-                                                                            .unwrap()
-                                                                    });
-                                                                    }
+                                                                load_section!(
+                                                                    self.backend_url.clone(),
+                                                                    self.additional_loaded_sections,
+                                                                    m,
+                                                                    size,
+                                                                    value,
+                                                                );
+                                                            } else {
+                                                                let current_y = get_y_from_addr(
+                                                                    &rect,
+                                                                    registers.rsp,
+                                                                    rsp_offset,
+                                                                    heightpad,
+                                                                    addr + 2,
+                                                                ) - 10.0;
+                                                                render_invalid_ptr_arrow(
+                                                                    ui,
+                                                                    &rect,
+                                                                    current_y,
+                                                                    COLORS[ivar % COLORS.len()],
+                                                                )
                                                             }
-                                                        } else {
-                                                            let current_y = get_y_from_addr(
-                                                                &rect,
-                                                                registers.rsp,
-                                                                rsp_offset,
-                                                                heightpad,
-                                                                addr + 2,
-                                                            ) - 10.0;
-                                                            render_invalid_ptr_arrow(
-                                                                ui,
-                                                                &rect,
-                                                                current_y,
-                                                                colors[ivar % colors.len()],
-                                                            )
                                                         }
                                                     }
                                                 }
@@ -1018,11 +1070,13 @@ impl VariableWindow {
                                                     render_section(ui, *start, section, name);
                                                 }
                                             }
-                                            for (i, (addr, value, datatype, index)) in heap_vars.iter().enumerate() {
+                                            for (i, (addr, value, datatype, index)) in
+                                                heap_vars.iter().enumerate()
+                                            {
                                                 if let TypeName::Ref { index: Some(index) } =
                                                     datatype.0[*index].1
                                                 {
-                                                    render_heap_variable(
+                                                    let sections_to_check = render_heap_variable(
                                                         ui,
                                                         &rect,
                                                         &self.additional_loaded_sections,
@@ -1030,8 +1084,25 @@ impl VariableWindow {
                                                         datatype,
                                                         index,
                                                         0,
-                                                        &mut draw_ref_count
+                                                        0,
+                                                        &mut draw_ref_count,
                                                     );
+                                                    if let Some(Ok(m)) = self.mapping.ready() {
+                                                        for (size, value) in sections_to_check {
+                                                            if let Some(m) = m.iter().find(|map| {
+                                                                map.from <= value
+                                                                    && value + size as u64 <= map.to
+                                                            }) {
+                                                                load_section!(
+                                                                    self.backend_url.clone(),
+                                                                    self.additional_loaded_sections,
+                                                                    m,
+                                                                    size,
+                                                                    value,
+                                                                );
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
                                         },
@@ -1118,12 +1189,12 @@ impl DebuggerWindowImpl for VariableWindow {
     }
     fn ui(&mut self, ui: &mut egui::Ui) -> (bool, egui::Response) {
         ui.horizontal(|ui| {
-            ui.selectable_value(
-                &mut self.active_tab,
-                ActiveTab::VariableList,
-                "Variable List",
-            );
-            ui.selectable_value(&mut self.active_tab, ActiveTab::StackView, "Memory");
+            // ui.selectable_value(
+            //     &mut self.active_tab,
+            //     ActiveTab::VariableList,
+            //     "Variable List",
+            // );
+            // ui.selectable_value(&mut self.active_tab, ActiveTab::StackView, "Memory");
         });
 
         let res = match self.active_tab {
