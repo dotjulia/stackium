@@ -12,7 +12,7 @@ fn main() -> Result<(), ()> {
         }
         _ => {}
     }
-    return Ok(());
+    // return Ok(());
     match Command::new("trunk")
         .current_dir("./ui")
         .arg("build")
