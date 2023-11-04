@@ -1,6 +1,6 @@
 ## stackium
 
- ![License: MIT](https://img.shields.io/badge/license-MIT-blue) ![Rust Version: ^1.71.1](https://img.shields.io/badge/rustc-%5E1.71.1-orange.svg)
+![Rust Version: ^1.71.1](https://img.shields.io/badge/rustc-%5E1.71.1-orange.svg)
 
 
 ## Stackium
