@@ -4,7 +4,8 @@ permissions:
   contents: write
 
 on:
-  push:
+  release:
+    types: [created]
 
 jobs:
   create-release:
