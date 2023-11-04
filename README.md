@@ -17,7 +17,7 @@ Usage: `stackium [OPTIONS] <PROGRAM>`
 Arguments: <PROGRAM> - the binary file to debug
 
 Options:
-* -m, --mode <MODE> [default: cli] [possible values: cli, web]
+* -m, --mode <MODE> [default: cli] [possible values: cli, web, gui]
 * -h, --help        Print help
 * -V, --version     Print version
 ```
