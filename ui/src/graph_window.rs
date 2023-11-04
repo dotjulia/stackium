@@ -205,6 +205,7 @@ impl GraphWindow {
 
 impl DebuggerWindowImpl for GraphWindow {
     fn dirty(&mut self) {
+        self.additional_loaded_sections = vec![];
         self.graph.nodes = vec![];
         self.variables = dispatch!(self.backend_url.clone(), Command::ReadVariables, Variables);
         self.mapping = dispatch!(self.backend_url.clone(), Command::Maps, Maps);
