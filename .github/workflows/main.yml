@@ -26,10 +26,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: jetli/trunk-action@v0.4.0
-      - name: Install cross-compilation tools
-        uses: taiki-e/setup-cross-toolchain-action@v1
-        with:
-          target: wasm32-unknown-unknown
+      - name: Install wasm32-unknown-unknown target
+        run: rustup target add wasm32-unknown-unknown
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
           # (required) Comma-separated list of binary names (non-extension portion of filename) to build and upload.
