@@ -12,9 +12,10 @@ fn main() -> Result<(), ()> {
         }
         _ => {}
     }
+    let base_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     // return Ok(());
     match Command::new("trunk")
-        .current_dir("./ui")
+        .current_dir(format!("{}/ui", base_dir))
         .arg("build")
         .arg("--release")
         .output()
@@ -22,8 +23,8 @@ fn main() -> Result<(), ()> {
         Ok(_) => {
             match Command::new("cp")
                 .arg("-R")
-                .arg("./ui/dist")
-                .arg(".")
+                .arg(format!("{}/ui/dist", base_dir))
+                .arg(base_dir + "/dist")
                 .output()
             {
                 Ok(_) => Ok(()),
