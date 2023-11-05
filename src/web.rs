@@ -6,7 +6,7 @@ use crate::debugger::{error::DebugError, Debugger};
 
 // static WEBSITE: &'static str = include_str!("../web/index.html");
 
-static DIST_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/dist");
+static DIST_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/ui/dist");
 
 type ResponseType = Response<std::io::Cursor<Vec<u8>>>;
 
@@ -45,7 +45,16 @@ fn other(path: &str) -> ResponseType {
     let path = path.trim_start_matches("/");
     for file in DIST_DIR.files() {
         if file.path().file_name().unwrap() == path {
-            return Response::from_data(file.contents()).with_header(format!("Content-Type: {}", mime_guess::from_path(path).first().unwrap_or(mime_guess::mime::TEXT_PLAIN)).parse::<Header>().unwrap());
+            return Response::from_data(file.contents()).with_header(
+                format!(
+                    "Content-Type: {}",
+                    mime_guess::from_path(path)
+                        .first()
+                        .unwrap_or(mime_guess::mime::TEXT_PLAIN)
+                )
+                .parse::<Header>()
+                .unwrap(),
+            );
         }
     }
     return Response::from_data([]).with_status_code(404);
@@ -65,7 +74,7 @@ pub fn start_webserver(mut debugger: Debugger) -> Result<(), DebugError> {
                 path => {
                     let path = path.to_string();
                     request.respond(other(&path))
-                },
+                }
             },
             tiny_http::Method::Post => match request.url() {
                 "/command" => {

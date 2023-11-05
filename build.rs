@@ -20,20 +20,7 @@ fn main() -> Result<(), ()> {
         .arg("--release")
         .output()
     {
-        Ok(_) => {
-            match Command::new("cp")
-                .arg("-R")
-                .arg(format!("{}/ui/dist", base_dir))
-                .arg(base_dir + "/dist")
-                .output()
-            {
-                Ok(_) => Ok(()),
-                Err(e) => {
-                    println!("cargo:warning=❌ Failed fetching dist files: {}", e);
-                    Err(())
-                }
-            }
-        }
+        Ok(_) => Ok(()),
         Err(e) => {
             println!("cargo:warning=❌ Failed to run trunk: {} ", e);
             println!("cargo:warning=❗ install trunk using \x1b[1mcargo install trunk\x1b[0m");
