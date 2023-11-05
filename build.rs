@@ -20,7 +20,18 @@ fn main() -> Result<(), ()> {
         .arg("--release")
         .output()
     {
-        Ok(_) => Ok(()),
+        Ok(output) => {
+            if output.status.success() {
+                Ok(())
+            } else {
+                println!(
+                    "cargo:warning=❌ Trunk failed: {}\ncargo:warning={}",
+                    std::str::from_utf8(&output.stdout).unwrap(),
+                    std::str::from_utf8(&output.stderr).unwrap()
+                );
+                Err(())
+            }
+        }
         Err(e) => {
             println!("cargo:warning=❌ Failed to run trunk: {} ", e);
             println!("cargo:warning=❗ install trunk using \x1b[1mcargo install trunk\x1b[0m");
