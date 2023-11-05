@@ -2138,10 +2138,11 @@ dependencies = [
 
 [[package]]
 name = "poll-promise"
-version = "0.2.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5760dbfd69d6cf87006ac3689dd07f9b9370f7064d6ddf0ebaa8563d0af10b75"
+checksum = "5f6a58fecbf9da8965bcdb20ce4fd29788d1acee68ddbb64f0ba1b81bccdb7df"
 dependencies = [
+ "document-features",
  "static_assertions",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -2692,7 +2693,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "stackium"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "dialoguer",

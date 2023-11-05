@@ -22,6 +22,9 @@ pub struct VariableWindow {
     hover_text: Option<String>,
     additional_loaded_sections: Vec<Section>,
     mapping: Promise<Result<Vec<MemoryMap>, String>>,
+    lock_stack: bool,
+    lock_stack_addr: u64,
+    rsp_offset: u64,
 }
 
 fn arrow_tip_length(
@@ -190,6 +193,9 @@ pub fn get_byte_size(types: &DataType, index: usize) -> usize {
 }
 
 fn read_value_stack(addr: u64, registers: &Registers, rsp_offset: u64, stack: &[u8]) -> u64 {
+    if addr < registers.rsp - rsp_offset {
+        return 0;
+    }
     let index = addr as usize - (registers.rsp - rsp_offset) as usize;
     let value = &stack[index..index + 8];
     let value = value[0] as u64
@@ -460,9 +466,9 @@ fn render_heap_variable(
     let top = get_section_y(
         rect,
         sections,
-        addr + get_byte_size(types, type_index) as u64,
-    );
-    let bottom = get_section_y(rect, sections, addr);
+        addr + get_byte_size(types, type_index) as u64 - 1,
+    ) - 3.5;
+    let bottom = get_section_y(rect, sections, addr) - 1.5;
     render_var_line(
         ui,
         rect,
@@ -683,6 +689,9 @@ impl VariableWindow {
             hover_text: None,
             additional_loaded_sections: vec![],
             mapping: Promise::from_ready(Err(String::new())),
+            lock_stack: false,
+            lock_stack_addr: 0,
+            rsp_offset: 16,
         };
         s.dirty();
         s
@@ -760,8 +769,13 @@ impl VariableWindow {
     }
 
     fn render_stack(&mut self, ui: &mut egui::Ui) -> egui::Response {
-        let rsp_offset = 16u64;
+        let rsp_offset = self.rsp_offset;
         if let Some(Ok(registers)) = self.registers.ready() {
+            let stack_start = if self.lock_stack {
+                self.lock_stack_addr
+            } else {
+                registers.rbp
+            };
             match &self.stack {
                 Some(s) => {
                     if let Some(Ok(stack)) = s.ready() {
@@ -850,7 +864,7 @@ impl VariableWindow {
                                                             value: None,
                                                             file: None,
                                                             line: None,
-                                                            addr: Some(registers.rbp + 8),
+                                                            addr: Some(stack_start + 8),
                                                             high_pc: 0,
                                                             low_pc: 0,
                                                         },
@@ -867,7 +881,7 @@ impl VariableWindow {
                                                             value: None,
                                                             file: None,
                                                             line: None,
-                                                            addr: Some(registers.rbp),
+                                                            addr: Some(stack_start),
                                                             high_pc: 0,
                                                             low_pc: 0,
                                                         },
@@ -899,7 +913,7 @@ impl VariableWindow {
                                                             addr, registers, rsp_offset, &stack,
                                                         );
                                                         if value >= registers.rsp - rsp_offset
-                                                            && value <= registers.rbp + 16
+                                                            && value <= stack_start + 16
                                                         {
                                                             let current_y = get_y_from_addr(
                                                                 &rect,
@@ -926,6 +940,46 @@ impl VariableWindow {
                                                                 0.0,
                                                                 false,
                                                             );
+                                                            if !vars
+                                                                .iter()
+                                                                .any(|v| v.addr == Some(value))
+                                                            {
+                                                                // render stack variable if not in var arr
+                                                                if let TypeName::Ref {
+                                                                    index: Some(index),
+                                                                } = datatype.0[typeindex].1
+                                                                {
+                                                                    render_variable_override(
+                                                                        ui,
+                                                                        &rect,
+                                                                        registers,
+                                                                        rsp_offset,
+                                                                        heightpad,
+                                                                        height,
+                                                                        COLORS[ivar % COLORS.len()],
+                                                                        &mut draw_ref_count,
+                                                                        &Variable {
+                                                                            name: Some(
+                                                                                datatype.0[index]
+                                                                                    .1
+                                                                                    .to_string(),
+                                                                            ),
+                                                                            type_name: Some(
+                                                                                datatype.clone(),
+                                                                            ),
+                                                                            value: None,
+                                                                            file: None,
+                                                                            line: None,
+                                                                            addr: Some(value),
+                                                                            high_pc: 0,
+                                                                            low_pc: 0,
+                                                                        },
+                                                                        0f32,
+                                                                        stack,
+                                                                        index,
+                                                                    );
+                                                                }
+                                                            }
                                                         } else if let Some((
                                                             start,
                                                             end,
@@ -937,9 +991,10 @@ impl VariableWindow {
                                                             .find(|(start, end, _, _)| {
                                                                 value >= *start
                                                                     && value
-                                                                        + get_byte_size(
-                                                                            datatype, typeindex,
-                                                                        )
+                                                                        //TODO: check for correct size?
+                                                                        // + get_byte_size(
+                                                                            // datatype, typeindex,
+                                                                        // )
                                                                             as u64
                                                                         <= *end
                                                             })
@@ -1121,7 +1176,7 @@ impl VariableWindow {
                                         Vec2::new(-15.0, 0.0),
                                         Stroke {
                                             width: 2.0,
-                                            color: Color32::WHITE,
+                                            color: ui.visuals().text_color(),
                                         },
                                     );
                                     ui.painter().text(
@@ -1141,7 +1196,7 @@ impl VariableWindow {
                                             size: 10.0,
                                             family: egui::FontFamily::Monospace,
                                         },
-                                        Color32::WHITE,
+                                        ui.visuals().text_color(),
                                     );
                                 }
 
@@ -1157,12 +1212,12 @@ impl VariableWindow {
                     }
                 }
                 None => {
-                    if registers.rbp >= registers.rsp {
+                    if stack_start >= registers.rsp {
                         self.stack = Some(dispatch_command_and_then(
                             self.backend_url.clone(),
                             Command::ReadMemory(
                                 registers.rsp - rsp_offset,
-                                (registers.rbp - registers.rsp) + 16 + rsp_offset,
+                                (stack_start - registers.rsp) + 16 + rsp_offset,
                             ),
                             |out| match out {
                                 CommandOutput::Memory(mem) => mem,
@@ -1188,14 +1243,39 @@ impl DebuggerWindowImpl for VariableWindow {
         self.stack = None
     }
     fn ui(&mut self, ui: &mut egui::Ui) -> (bool, egui::Response) {
-        ui.horizontal(|ui| {
-            // ui.selectable_value(
-            //     &mut self.active_tab,
-            //     ActiveTab::VariableList,
-            //     "Variable List",
-            // );
-            // ui.selectable_value(&mut self.active_tab, ActiveTab::StackView, "Memory");
-        });
+        // ui.horizontal(|ui| {
+        // ui.selectable_value(
+        //     &mut self.active_tab,
+        //     ActiveTab::VariableList,
+        //     "Variable List",
+        // );
+        // ui.selectable_value(&mut self.active_tab, ActiveTab::StackView, "Memory");
+        // });
+        let mut stack_dirty = false;
+        if let Some(Ok(registers)) = self.registers.ready() {
+            ui.horizontal(|ui| {
+                if ui
+                    .checkbox(&mut self.lock_stack, "Lock stack start")
+                    .clicked()
+                {
+                    if self.lock_stack {
+                        self.lock_stack_addr = registers.rbp;
+                    }
+                }
+                if self.lock_stack {
+                    ui.label(format!("Locked at: {:#x}", self.lock_stack_addr));
+                }
+                if ui
+                    .add(egui::Slider::new(&mut self.rsp_offset, 0..=64).text("Stack End Offset"))
+                    .changed()
+                {
+                    stack_dirty = true;
+                }
+            });
+        }
+        if stack_dirty {
+            self.dirty();
+        }
 
         let res = match self.active_tab {
             ActiveTab::VariableList => self.render_variable_list(ui),

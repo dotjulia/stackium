@@ -6,7 +6,7 @@ use url::Url;
 use crate::{
     breakpoint_window::BreakpointWindow,
     code_window::CodeWindow,
-    command::dispatch,
+    command::{dispatch, dispatch_command_and_then},
     control_window::ControlWindow,
     debugger_window::{DebuggerWindow, Metadata},
     graph_window::GraphWindow,
@@ -25,6 +25,7 @@ enum State {
         metadata: Promise<Result<DebugMeta, String>>,
         windows: Vec<DebuggerWindow>,
         icon: Option<TextureHandle>,
+        mapping: Promise<Result<(), String>>,
         fullscreen: Option<&'static str>,
     },
     UnrecoverableFailure {
@@ -47,6 +48,9 @@ impl StackiumApp {
                 sidebar_open: true,
                 backend_url: backend_url.clone(),
                 metadata: { dispatch!(backend_url.clone(), Command::DebugMeta, DebugMeta) },
+                mapping: {
+                    dispatch_command_and_then(backend_url.clone(), Command::Maps, |maps| {})
+                },
                 windows: vec![
                     DebuggerWindow {
                         title: "Metadata",
@@ -85,7 +89,7 @@ impl StackiumApp {
                     },
                     DebuggerWindow {
                         title: "Graph",
-                        is_active: true,
+                        is_active: false,
                         body: Box::from(GraphWindow::new(backend_url.clone())),
                     },
                     DebuggerWindow {
@@ -120,8 +124,15 @@ impl eframe::App for StackiumApp {
             windows,
             icon: _,
             fullscreen: _,
+            mapping,
         } = &mut self.state
         {
+            if let Some(Err(_)) = mapping.ready() {
+                self.next_state = Some(State::UnrecoverableFailure {
+                    message: "Child process exited".to_owned(),
+                });
+                return;
+            }
             for window in windows {
                 window.body.update(ctx, frame);
             }
@@ -145,12 +156,13 @@ impl eframe::App for StackiumApp {
 
         match &mut self.state {
             State::Debugging {
-                backend_url: _,
+                backend_url,
                 metadata,
                 sidebar_open,
                 windows,
                 icon,
                 fullscreen,
+                mapping,
             } => {
                 egui::SidePanel::left("side_pabel").show_animated(ctx, *sidebar_open, |ui| {
                     let texture = icon.get_or_insert_with(|| {
@@ -253,6 +265,11 @@ impl eframe::App for StackiumApp {
                             }
                             if is_dirty {
                                 windows.iter_mut().for_each(|w| w.body.dirty());
+                                *mapping = dispatch_command_and_then(
+                                    backend_url.clone(),
+                                    Command::Maps,
+                                    |maps| {},
+                                )
                             }
                         }
                         Err(e) => {
