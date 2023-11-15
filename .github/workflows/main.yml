@@ -26,6 +26,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # - uses: jetli/trunk-action@v0.4.0
+      - name: Install musl-tools
+        run: sudo apt-get -y install musl-tools
       - name: Install rustup
         uses: crusty-pie/toolchain@v1
         with:
