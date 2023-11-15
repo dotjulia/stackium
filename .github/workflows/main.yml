@@ -25,11 +25,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: jetli/trunk-action@v0.4.0
-      - name: Install wasm32-unknown-unknown target
-        run: rustup target add wasm32-unknown-unknown
-      - name: Install wasm32-unknown-unknown target
-        run: rustup target add x86_64-unknown-linux-musl
+      # - uses: jetli/trunk-action@v0.4.0
+      - name: Install rustup
+        uses: crusty-pie/toolchain@v1
+        with:
+            toolchain: stable
+            targets: 'x86_64-unknown-linux-musl, wasm32-unknown-unknown'
+            override: true
+            default: true
+      - name: Install trunk
+        run: cargo install --locked trunk
+      # - name: Install wasm32-unknown-unknown target
+      #   run: rustup target add wasm32-unknown-unknown
+      # - name: Install x86_64-unknown-linux-musl target
+      #   run: rustup target add x86_64-unknown-linux-musl
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
           bin: stackium
