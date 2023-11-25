@@ -185,85 +185,93 @@ impl CodeWindow {
             },
             None => None,
         };
-        for (num, line) in code.lines().enumerate() {
-            let num = num + 1;
-            ui.vertical(|ui| {
-                // how do i specify item spacing 😭
-                ui.add_space(-2. * ui.spacing().item_spacing.y);
-                ui.horizontal(|ui| {
-                    match self.breakpoints.ready() {
-                        Some(breakpoints) => match breakpoints {
-                            Ok(breakpoints) => {
-                                let is_on = breakpoints.iter().any(|bp| {
-                                    bp.location.file == self.displaying_file
-                                        && bp.location.line == num as u64
-                                });
-                                if Self::render_breakpoint(ui, is_on).clicked() {
-                                    if is_on {
-                                        self.create_breakpoint_request =
-                                            Some(dispatch_command_and_then(
-                                                self.backend_url.clone(),
-                                                Command::DeleteBreakpoint(
-                                                    breakpoints
-                                                        .iter()
-                                                        .find(|b| {
-                                                            b.location.line == num as u64
-                                                                && b.location.file
-                                                                    == self.displaying_file
-                                                        })
-                                                        .unwrap()
-                                                        .address,
-                                                ),
-                                                |_| {},
-                                            ));
-                                    } else {
-                                        self.create_breakpoint_request =
-                                            Some(dispatch_command_and_then(
-                                                self.backend_url.clone(),
-                                                Command::SetBreakpoint(BreakpointPoint::Location(
-                                                    Location {
-                                                        line: num as u64,
-                                                        file: self.displaying_file.clone(),
-                                                        column: 0,
-                                                    },
-                                                )),
-                                                |_| {},
-                                            ));
+        ScrollArea::both()
+            .auto_shrink([false; 2])
+            .max_height(400.)
+            .show_viewport(ui, |ui, _| {
+                for (num, line) in code.lines().enumerate() {
+                    let num = num + 1;
+                    ui.vertical(|ui| {
+                        // how do i specify item spacing 😭
+                        ui.add_space(-2. * ui.spacing().item_spacing.y);
+                        ui.horizontal(|ui| {
+                            match self.breakpoints.ready() {
+                                Some(breakpoints) => match breakpoints {
+                                    Ok(breakpoints) => {
+                                        let is_on = breakpoints.iter().any(|bp| {
+                                            bp.location.file == self.displaying_file
+                                                && bp.location.line == num as u64
+                                        });
+                                        if Self::render_breakpoint(ui, is_on).clicked() {
+                                            if is_on {
+                                                self.create_breakpoint_request =
+                                                    Some(dispatch_command_and_then(
+                                                        self.backend_url.clone(),
+                                                        Command::DeleteBreakpoint(
+                                                            breakpoints
+                                                                .iter()
+                                                                .find(|b| {
+                                                                    b.location.line == num as u64
+                                                                        && b.location.file
+                                                                            == self.displaying_file
+                                                                })
+                                                                .unwrap()
+                                                                .address,
+                                                        ),
+                                                        |_| {},
+                                                    ));
+                                            } else {
+                                                self.create_breakpoint_request =
+                                                    Some(dispatch_command_and_then(
+                                                        self.backend_url.clone(),
+                                                        Command::SetBreakpoint(
+                                                            BreakpointPoint::Location(Location {
+                                                                line: num as u64,
+                                                                file: self.displaying_file.clone(),
+                                                                column: 0,
+                                                            }),
+                                                        ),
+                                                        |_| {},
+                                                    ));
+                                            }
+                                        };
                                     }
-                                };
-                            }
-                            Err(_) => {
-                                ui.label(RichText::new("x").color(ui.visuals().error_fg_color));
-                            }
-                        },
-                        None => {
-                            Self::render_breakpoint(ui, false);
-                        }
-                    };
-                    ui.label(num.to_string());
+                                    Err(_) => {
+                                        ui.label(
+                                            RichText::new("x").color(ui.visuals().error_fg_color),
+                                        );
+                                    }
+                                },
+                                None => {
+                                    Self::render_breakpoint(ui, false);
+                                }
+                            };
+                            ui.label(num.to_string());
 
-                    if match location {
-                        Some(l) => l.line == num as u64,
-                        None => false,
-                    } {
-                        let (rect, _) = ui.allocate_exact_size(
-                            egui::Vec2::new(6.6 * line.len() as f32, 15.),
-                            egui::Sense::hover(),
-                        );
-                        ui.painter()
-                            .rect_filled(rect, 2., egui::Color32::LIGHT_GREEN);
-                        ui.put(rect, |ui: &mut egui::Ui| {
-                            ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
-                                code_view_ui(ui, line, &self.code_theme.clone(), "c")
-                            })
-                            .response
+                            if match location {
+                                Some(l) => l.line == num as u64,
+                                None => false,
+                            } {
+                                let (rect, _) = ui.allocate_exact_size(
+                                    egui::Vec2::new(6.6 * line.len() as f32, 15.),
+                                    egui::Sense::hover(),
+                                );
+                                ui.painter()
+                                    .rect_filled(rect, 2., egui::Color32::LIGHT_GREEN);
+                                ui.put(rect, |ui: &mut egui::Ui| {
+                                    ui.with_layout(
+                                        egui::Layout::left_to_right(egui::Align::Min),
+                                        |ui| code_view_ui(ui, line, &self.code_theme.clone(), "c"),
+                                    )
+                                    .response
+                                });
+                            } else {
+                                code_view_ui(ui, line, &self.code_theme, "c");
+                            }
                         });
-                    } else {
-                        code_view_ui(ui, line, &self.code_theme, "c");
-                    }
-                });
+                    });
+                }
             });
-        }
 
         let mut dirty = false;
         match &self.create_breakpoint_request {

@@ -177,6 +177,13 @@ impl Debugger {
                                     println!("Failed getting type name");
                                 }
                             }
+                            gimli::DW_TAG_const_type => {
+                                if let Ok(Some(type_field)) = node.entry().attr(gimli::DW_AT_type) {
+                                    known_types =
+                                        debugger.decode_type(type_field.value(), known_types)?;
+                                    return Ok(Some(known_types));
+                                }
+                            }
                             gimli::DW_TAG_pointer_type => {
                                 if let Ok(Some(type_field)) = node.entry().attr(gimli::DW_AT_type) {
                                     //TODO: Find fix for recursive types
@@ -338,10 +345,11 @@ impl Debugger {
                                 }
                             }
                             _ => {
-                                println!("unknown");
+                                println!("Invalid entry: {:?}", node.entry().tag());
                                 return Err(DebugError::InvalidType);
                             }
                         }
+                        println!("Invalid entry: {:?}", node.entry().tag());
                         return Err(DebugError::InvalidType);
                     }
                     let mut children = node.children();
@@ -365,8 +373,10 @@ impl Debugger {
                     return Ok(t);
                 }
             }
+            println!("Didn't find header");
             Err(DebugError::InvalidType)
         } else {
+            println!("Invalid offset type");
             Err(DebugError::InvalidType)
         }
     }

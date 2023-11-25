@@ -586,7 +586,7 @@ fn render_section(ui: &mut egui::Ui, start: u64, memory: &Vec<u8>, name: &String
                             "{:#x} {:#04x} {}",
                             start + i as u64,
                             byte,
-                            if (*byte as char).is_ascii() {
+                            if (*byte as char).is_ascii() && (*byte as char) != '\n' {
                                 *byte as char
                             } else {
                                 '·'
