@@ -1,4 +1,4 @@
-use egui::{Rect, Response, Sense, Stroke, Ui, Vec2};
+use egui::{FontId, Rect, Response, Sense, Stroke, Ui, Vec2};
 use poll_promise::Promise;
 use stackium_shared::{Command, CommandOutput, DataType, MemoryMap, Variable};
 use url::Url;
@@ -10,18 +10,24 @@ trait NodeContent: Clone {
 }
 
 #[derive(Clone)]
+struct Edge {
+    connection: usize,
+    label: String,
+}
+
+#[derive(Clone)]
 struct Node<Data: NodeContent> {
     x: f32,
     y: f32,
     width: f32,
     height: f32,
     id: usize,
-    connections: Vec<usize>,
+    connections: Vec<Edge>,
     pub data: Data,
 }
 
 impl<D: NodeContent> Node<D> {
-    pub fn new(id: usize, connections: Vec<usize>, data: D) -> Self {
+    pub fn new(id: usize, connections: Vec<Edge>, data: D) -> Self {
         Self {
             x: 0.0,
             y: 0.0,
@@ -93,14 +99,26 @@ impl<D: NodeContent> Graph<D> {
         let nodes_before = self.nodes.clone();
         for node in self.nodes.iter_mut() {
             node.render(ui, rect);
-            for connection in node.connections.iter() {
-                if let Some(other_node) = nodes_before.iter().find(|n| n.id == *connection) {
+            for edge in node.connections.iter() {
+                if let Some(other_node) = nodes_before.iter().find(|n| n.id == edge.connection) {
                     ui.painter().line_segment(
                         [node.rect(rect).max, other_node.rect(rect).min],
                         Stroke {
                             width: 4.0,
                             color: ui.visuals().text_color(),
                         },
+                    );
+                    ui.painter().text(
+                        ((node.rect(rect).max + other_node.rect(rect).min.to_vec2()).to_vec2()
+                            / 2.0)
+                            .to_pos2(),
+                        egui::Align2::LEFT_CENTER,
+                        &edge.label,
+                        FontId {
+                            size: 12.0,
+                            family: egui::FontFamily::Monospace,
+                        },
+                        ui.visuals().text_color(),
                     );
                 }
             }
@@ -238,7 +256,7 @@ impl DebuggerWindowImpl for GraphWindow {
 }
 
 fn push_variables(
-    vars: &Vec<(u64, Vec<u64>, usize, DataType)>,
+    vars: &Vec<(u64, Vec<Edge>, usize, DataType)>,
     graph: &mut Graph<VariableNodeData>,
 ) {
     let mut did_add = false;
@@ -248,12 +266,12 @@ fn push_variables(
             .iter_mut()
             .find(|node| node.id == *addr as usize)
         {
-            node.connections = refs.iter().map(|i| *i as usize).collect();
+            node.connections = refs.clone();
         } else {
             did_add = true;
             graph.nodes.push(Node::new(
                 *addr as usize,
-                refs.iter().map(|i| *i as usize).collect(),
+                refs.clone(),
                 VariableNodeData {
                     types: types.clone(),
                     typeid: *typeid,
@@ -290,7 +308,7 @@ fn check_variable_recursive(
     type_index: usize,
     types: DataType,
     search_mode: bool,
-) -> Vec<(u64, Vec<u64>, usize, DataType)> {
+) -> Vec<(u64, Vec<Edge>, usize, DataType)> {
     let size = get_byte_size(&types, type_index);
     if let Some(section) = sections
         .iter()
@@ -298,7 +316,10 @@ fn check_variable_recursive(
     {
         if let Some(Ok(memory)) = section.2.ready() {
             match &types.0[type_index].1 {
-                stackium_shared::TypeName::Name { name, byte_size } => {
+                stackium_shared::TypeName::Name {
+                    name: _,
+                    byte_size: _,
+                } => {
                     if !search_mode {
                         return vec![(addr, vec![], type_index, types.clone())];
                     } else {
@@ -306,13 +327,44 @@ fn check_variable_recursive(
                     }
                 }
                 stackium_shared::TypeName::Arr { arr_type, count } => {
-                    todo!()
+                    let mut ret_val = vec![];
+                    let mut refs = vec![];
+                    for i in 0..count.iter().fold(1, |acc, e| acc * *e) {
+                        let mut a = check_variable_recursive(
+                            mapping,
+                            sections,
+                            backend_url,
+                            addr + get_byte_size(&types, *arr_type) as u64 * i as u64,
+                            *arr_type,
+                            types.clone(),
+                            true,
+                        );
+                        if let Some(first) = a.iter().last() {
+                            refs.push(Edge {
+                                connection: first.0 as usize,
+                                label: format!("[{}]", i),
+                            });
+                        }
+                        ret_val.append(&mut a);
+                    }
+                    if !search_mode {
+                        ret_val.push((addr, refs, type_index, types.clone()));
+                    }
+                    return ret_val;
                 }
                 stackium_shared::TypeName::Ref { index } => {
                     let mut ret_val = vec![];
                     let value = read_value(memory, addr as usize - section.0 as usize);
                     if !search_mode {
-                        ret_val.push((addr, vec![value], type_index, types.clone()));
+                        ret_val.push((
+                            addr,
+                            vec![Edge {
+                                connection: value as usize,
+                                label: String::new(),
+                            }],
+                            type_index,
+                            types.clone(),
+                        ));
                     }
                     if let Some(index) = index {
                         ret_val.append(&mut check_variable_recursive(
@@ -334,7 +386,7 @@ fn check_variable_recursive(
                 } => {
                     let mut ret_val = vec![];
                     let mut refs = vec![];
-                    for (_, prod_type_offset, offset) in members.iter() {
+                    for (name, prod_type_offset, offset) in members.iter() {
                         let mut a = check_variable_recursive(
                             mapping,
                             sections,
@@ -345,7 +397,10 @@ fn check_variable_recursive(
                             true,
                         );
                         if let Some(first) = a.iter().last() {
-                            refs.push(first.0);
+                            refs.push(Edge {
+                                connection: first.0 as usize,
+                                label: name.clone(),
+                            });
                         }
                         ret_val.append(&mut a);
                     }
