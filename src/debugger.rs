@@ -184,6 +184,13 @@ impl Debugger {
                                     return Ok(Some(known_types));
                                 }
                             }
+                            gimli::DW_TAG_typedef => {
+                                if let Ok(Some(type_field)) = node.entry().attr(gimli::DW_AT_type) {
+                                    known_types =
+                                        debugger.decode_type(type_field.value(), known_types)?;
+                                    return Ok(Some(known_types));
+                                }
+                            }
                             gimli::DW_TAG_pointer_type => {
                                 if let Ok(Some(type_field)) = node.entry().attr(gimli::DW_AT_type) {
                                     //TODO: Find fix for recursive types
@@ -270,16 +277,19 @@ impl Debugger {
                                 }
                             }
                             gimli::DW_TAG_structure_type => {
-                                if let (Some(name), Some(byte_size)) = (
+                                if let (name, Some(byte_size)) = (
                                     node.entry().attr(gimli::DW_AT_name)?,
                                     node.entry().attr(gimli::DW_AT_byte_size)?,
                                 ) {
-                                    let name = name
-                                        .string_value(&dwarf.debug_str)
-                                        .unwrap()
-                                        .to_string()
-                                        .unwrap()
-                                        .to_string();
+                                    let name = if let Some(name) = name {
+                                        name.string_value(&dwarf.debug_str)
+                                            .unwrap()
+                                            .to_string()
+                                            .unwrap()
+                                            .to_string()
+                                    } else {
+                                        "unnamed struct".to_owned()
+                                    };
                                     let byte_size = byte_size.udata_value().unwrap();
                                     // Push Structure first in case of self referential struct
                                     println!("Decoding struct: {} {:?}", &name, known_types);
