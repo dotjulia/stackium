@@ -481,10 +481,22 @@ fn render_heap_variable(
     );
     let mut ret_val = vec![];
     match &types.0[type_index].1 {
-        TypeName::Arr {
-            arr_type: _,
-            count: _,
-        } => todo!(), //TODO: arrays on the heap
+        TypeName::Arr { arr_type, count } => {
+            let byte_size = get_byte_size(&types, *arr_type);
+            for i in 0..count.iter().fold(1, |acc, e| acc * e) {
+                ret_val.append(&mut render_heap_variable(
+                    ui,
+                    rect,
+                    sections,
+                    addr + byte_size as u64 * i as u64,
+                    types,
+                    *arr_type,
+                    recurse,
+                    color_walk,
+                    draw_ref_count,
+                ));
+            }
+        } //TODO: arrays on the heap
         TypeName::ProductType {
             name: _,
             members,

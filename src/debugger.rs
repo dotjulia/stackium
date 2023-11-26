@@ -189,6 +189,23 @@ impl Debugger {
                                     known_types =
                                         debugger.decode_type(type_field.value(), known_types)?;
                                     return Ok(Some(known_types));
+                                } else {
+                                    let name = if let Ok(Some(name)) =
+                                        node.entry().attr(gimli::DW_AT_name)
+                                    {
+                                        name.string_value(&dwarf.debug_str)
+                                            .unwrap()
+                                            .to_string()
+                                            .unwrap()
+                                            .to_string()
+                                    } else {
+                                        String::new()
+                                    };
+                                    known_types.0.push((
+                                        find_offset.0,
+                                        TypeName::Name { name, byte_size: 0 },
+                                    ));
+                                    return Ok(Some(known_types));
                                 }
                             }
                             gimli::DW_TAG_pointer_type => {
@@ -227,6 +244,7 @@ impl Debugger {
                                     known_types
                                         .0
                                         .push((find_offset.0, TypeName::Ref { index: None }));
+                                    return Ok(Some(known_types));
                                 }
                             }
                             gimli::DW_TAG_array_type => {
@@ -277,89 +295,98 @@ impl Debugger {
                                 }
                             }
                             gimli::DW_TAG_structure_type => {
-                                if let (name, Some(byte_size)) = (
+                                let (name, byte_size) = (
                                     node.entry().attr(gimli::DW_AT_name)?,
                                     node.entry().attr(gimli::DW_AT_byte_size)?,
-                                ) {
-                                    let name = if let Some(name) = name {
-                                        name.string_value(&dwarf.debug_str)
-                                            .unwrap()
-                                            .to_string()
-                                            .unwrap()
-                                            .to_string()
-                                    } else {
-                                        "unnamed struct".to_owned()
-                                    };
-                                    let byte_size = byte_size.udata_value().unwrap();
-                                    // Push Structure first in case of self referential struct
-                                    println!("Decoding struct: {} {:?}", &name, known_types);
-
-                                    known_types.0.push((
-                                        find_offset.0,
-                                        TypeName::ProductType {
-                                            name: name.clone(),
-                                            members: vec![],
-                                            byte_size: byte_size as usize,
-                                        },
-                                    ));
-                                    let struct_index = known_types.0.len() - 1;
-                                    let mut children_iter = node.children();
-                                    let mut types: Vec<(String, usize, usize)> = vec![];
-                                    while let Ok(Some(child)) = children_iter.next() {
-                                        if let (
-                                            Ok(Some(name)),
-                                            Ok(Some(typeoffset)),
-                                            Ok(Some(byteoffset)),
-                                        ) = (
-                                            child.entry().attr(gimli::DW_AT_name),
-                                            child.entry().attr(gimli::DW_AT_type),
-                                            child.entry().attr(gimli::DW_AT_data_member_location),
-                                        ) {
-                                            let name = name
-                                                .string_value(&dwarf.debug_str)
-                                                .unwrap()
-                                                .to_string()
-                                                .unwrap()
-                                                .to_string();
-                                            let index = if let Some(index) =
-                                                known_types.0.iter().position(|t| {
-                                                    t.0 == unit_offset(typeoffset.value()).unwrap()
-                                                }) {
-                                                index
-                                            } else {
-                                                let membertype = debugger.decode_type(
-                                                    typeoffset.value(),
-                                                    known_types.clone(),
-                                                )?;
-                                                let i = known_types.0.len();
-                                                known_types.0 = membertype.0;
-                                                i
-                                            };
-                                            let byteoffset = byteoffset.udata_value().unwrap();
-                                            types.push((name, index, byteoffset as usize));
-                                        } else {
-                                            println!("Failed to decode member type");
-                                        }
-                                    }
-                                    known_types.0[struct_index] = (
-                                        find_offset.0,
-                                        TypeName::ProductType {
-                                            name,
-                                            members: types,
-                                            byte_size: byte_size as usize,
-                                        },
-                                    );
-                                    return Ok(Some(known_types));
+                                );
+                                let name = if let Some(name) = name {
+                                    name.string_value(&dwarf.debug_str)
+                                        .unwrap()
+                                        .to_string()
+                                        .unwrap()
+                                        .to_string()
                                 } else {
-                                    println!("Failed to get struct name");
+                                    "unnamed struct".to_owned()
+                                };
+                                let byte_size = if let Some(byte_size) = byte_size {
+                                    byte_size.udata_value().unwrap()
+                                } else {
+                                    0
+                                };
+                                // Push Structure first in case of self referential struct
+                                println!("Decoding struct: {} {:?}", &name, known_types);
+
+                                known_types.0.push((
+                                    find_offset.0,
+                                    TypeName::ProductType {
+                                        name: name.clone(),
+                                        members: vec![],
+                                        byte_size: byte_size as usize,
+                                    },
+                                ));
+                                let struct_index = known_types.0.len() - 1;
+                                let mut children_iter = node.children();
+                                let mut types: Vec<(String, usize, usize)> = vec![];
+                                while let Ok(Some(child)) = children_iter.next() {
+                                    if let (
+                                        Ok(Some(name)),
+                                        Ok(Some(typeoffset)),
+                                        Ok(Some(byteoffset)),
+                                    ) = (
+                                        child.entry().attr(gimli::DW_AT_name),
+                                        child.entry().attr(gimli::DW_AT_type),
+                                        child.entry().attr(gimli::DW_AT_data_member_location),
+                                    ) {
+                                        let name = name
+                                            .string_value(&dwarf.debug_str)
+                                            .unwrap()
+                                            .to_string()
+                                            .unwrap()
+                                            .to_string();
+                                        let index = if let Some(index) =
+                                            known_types.0.iter().position(|t| {
+                                                t.0 == unit_offset(typeoffset.value()).unwrap()
+                                            }) {
+                                            index
+                                        } else {
+                                            let membertype = debugger.decode_type(
+                                                typeoffset.value(),
+                                                known_types.clone(),
+                                            )?;
+                                            let i = known_types.0.len();
+                                            known_types.0 = membertype.0;
+                                            i
+                                        };
+                                        let byteoffset = byteoffset.udata_value().unwrap();
+                                        types.push((name, index, byteoffset as usize));
+                                    } else {
+                                        println!("Failed to decode member type");
+                                    }
                                 }
+                                known_types.0[struct_index] = (
+                                    find_offset.0,
+                                    TypeName::ProductType {
+                                        name,
+                                        members: types,
+                                        byte_size: byte_size as usize,
+                                    },
+                                );
+                                return Ok(Some(known_types));
                             }
                             _ => {
-                                println!("Invalid entry: {:?}", node.entry().tag());
+                                println!(
+                                    "Invalid entry: {:?}, offset: {:?}",
+                                    node.entry().tag(),
+                                    node.entry().offset()
+                                );
                                 return Err(DebugError::InvalidType);
                             }
                         }
-                        println!("Invalid entry: {:?}", node.entry().tag());
+                        println!(
+                            "Failed parsing entry: {:?}, offset: {:?}",
+                            node.entry().tag(),
+                            node.entry().offset()
+                        );
                         return Err(DebugError::InvalidType);
                     }
                     let mut children = node.children();
