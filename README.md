@@ -1,7 +1,12 @@
-## stackium
 
-![Rust Version: ^1.71.1](https://img.shields.io/badge/rustc-%5E1.71.1-orange.svg)
-
+<p align="center">
+  <img width="300" height="300" src="ui/assets/icon-1024.png">
+ <h1 align="center">Stackium</h1>
+</p>
+<p align="center">
+ <img alt="Rust Version: ^1.71.1" src="https://img.shields.io/badge/rustc-%5E1.71.1-orange.svg">
+<a href="https://github.com/dotjulia/stackium/actions/workflows/main.yml"><img alt="Release" src="https://github.com/dotjulia/stackium/actions/workflows/main.yml/badge.svg"></a>
+</p>
 
 ## Stackium
 
