@@ -1,0 +1,206 @@
+/* Asciidoctor default stylesheet | MIT License | https://asciidoctor.org */
+
+@import url("https://fonts.googleapis.com/css?family=Source+Code+Pro");
+@import url(https://cdn.jsdelivr.net/gh/asciidoctor/asciidoctor@2.0/data/stylesheets/asciidoctor-default.css);
+/* Default asciidoc style framework - important */
+
+/* CUSTOMISATIONS */
+/* Change the values in root for quick customisation. If you want even more fine grain... venture further. */
+
+:root {
+  --maincolor: #FFFFFF;
+  --primarycolor: rgb(232, 233, 237);
+  --secondarycolor: rgb(232, 233, 237);
+  --tertiarycolor: #a3abba;
+  --sidebarbackground: #43335b;
+  --background: #322342;
+  --linkcolor: rgb(98, 196, 255);
+  --glow: #8e3075;
+  --linkcoloralternate: #ff3c74;
+  --white: #FFFFFF;
+  --black: #000000;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--maincolor);
+}
+
+#toctitle {
+  color: #ca3faa;
+  /* glow */
+  text-shadow: 0 0 10px var(--glow);
+}
+
+#toc.toc2,
+#toc.toc {
+  background: var(--background) !important;
+  background-color: var(--background) !important;
+  color: var(--linkcolor) !important;
+  text-align: left !important;
+  border-color: var(--glow) !important;
+}
+
+#toc.toc {
+  box-shadow: 0 0 10px var(--glow);
+  background-color: var(--sidebarbackground) !important;
+}
+
+#toc.toc2 {
+  border-right: none !important;
+}
+
+.sidebarblock,
+.admonitionblock,
+.listingblock {
+  background-color: var(--sidebarbackground);
+  border: #8e3075 1px solid;
+  border-radius: 5px;
+  /* glow */
+  box-shadow: 0 0 10px var(--glow);
+  margin-bottom: 1em;
+}
+
+code,
+pre.highlight {
+  background: var(--sidebarbackground) !important;
+  color: var(--maincolor) !important;
+}
+
+.sidebarblock code,
+.admonitionblock code {
+  background: #594478 !important;
+}
+
+a {
+  color: var(--linkcolor) !important;
+}
+
+a:hover {
+  color: var(--background) !important;
+  background-color: var(--linkcolor);
+}
+
+.admonitionblock {
+  /* radius */
+  color: var(--maincolor);
+}
+
+.admonitionblock td.icon .icon-tip::before {
+  color: lightblue;
+  text-shadow: none;
+}
+
+/* .admonitionblock {
+  b
+}
+
+.admonitionblock .tip {} */
+
+body {
+  font-family: "Source Code Pro", sans-serif;
+}
+
+/* Text styles */
+h1 {
+  color: var(--primarycolor) !important;
+  font-family: "Source Code Pro", sans-serif;
+}
+
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: var(--secondarycolor) !important;
+  font-family: "Source Code Pro", sans-serif;
+}
+
+.title {
+  color: var(--tertiarycolor) !important;
+  font-family: "Source Code Pro", sans-serif !important;
+  font-style: normal !important;
+  font-weight: normal !important;
+}
+
+/* Sidebar */
+#toctitle {
+  font-family: "Source Code Pro", sans-serif;
+}
+
+.sectlevel1 {
+  font-family: "Source Code Pro", sans-serif !important;
+}
+
+.sectlevel2 {
+  font-family: "Source Code Pro", sans-serif !important;
+}
+
+/* .icon-tip:before {
+  content: "\f0eb";
+  text-shadow: 1px 1px 2px rgba(155, 155, 0, .8);
+  color: #111
+} */
+
+
+/* Callouts */
+.admonitionblock>table td.content {
+  color: var(--maincolor);
+  border-left: none;
+  padding-left: 0;
+}
+
+.admonitionblock>table {
+  margin-bottom: 0;
+}
+
+/* Images */
+img:not([alt='Logo']) {
+  border-radius: 5px;
+  /* glow */
+  box-shadow: 0 0 10px var(--glow);
+  border: 1px solid var(--glow);
+}
+
+.imgcols>.content {
+  display: flex;
+  flex-direction: row;
+  gap: 1em;
+}
+
+.imgcols>.content>* {
+  flex: 1;
+}
+
+.imgcols>.content>.smaller {
+  flex: 0.5;
+}
+
+.imgcols>.content>.imageblock>.content>img,
+.imgcols>.content>.imageblock>.content {
+  width: 100%;
+}
+
+
+
+
+/* Responsiveness fixes */
+video {
+  max-width: 100%;
+}
+
+@media all and (max-width: 600px) {
+  table {
+    width: 55vw !important;
+    font-size: 3vw;
+  }
+
+  .imgcols>.content {
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+#footer {
+  display: none;
+}
