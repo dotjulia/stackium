@@ -180,8 +180,7 @@ pub fn get_byte_size(types: &DataType, index: usize) -> usize {
     match &types.0[index].1 {
         TypeName::Name { name: _, byte_size } => *byte_size,
         TypeName::Arr { arr_type, count } => {
-            count.iter().cloned().reduce(|e1, e2| e1 * e2).unwrap()
-                * get_byte_size(types, *arr_type)
+            count.iter().cloned().fold(1, |e1, e2| e1 * e2) * get_byte_size(types, *arr_type)
         }
         TypeName::Ref { index: _ } => 8usize,
         TypeName::ProductType {
@@ -291,7 +290,7 @@ fn render_variable_override(
                     rsp_offset,
                     heightpad,
                     addr + byte_size as u64
-                        * count.iter().cloned().reduce(|e1, e2| e1 * e2).unwrap() as u64
+                        * count.iter().cloned().fold(1, |e1, e2| e1 * e2) as u64
                         - 1,
                 ) + 2.0;
                 let offset = offset + 5.0;
@@ -305,7 +304,7 @@ fn render_variable_override(
                     color,
                     true,
                 );
-                for i in 0..count.iter().cloned().reduce(|e1, e2| e1 * e2).unwrap() {
+                for i in 0..count.iter().cloned().fold(1, |e1, e2| e1 * e2) {
                     let addr = i as u64 * byte_size as u64 + addr;
                     render_variable_override(
                         ui,
@@ -623,7 +622,7 @@ fn get_all_ptrs(datatypes: &DataType, type_index: usize, addr: u64) -> Vec<(u64,
         } => vec![],
         TypeName::Arr { arr_type, count } => {
             let mut ptrs = vec![];
-            for i in 0..count.iter().cloned().reduce(|e1, e2| e1 * e2).unwrap() {
+            for i in 0..count.iter().cloned().fold(1, |e1, e2| e1 * e2) {
                 ptrs.append(&mut get_all_ptrs(
                     datatypes,
                     *arr_type,

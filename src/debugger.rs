@@ -677,7 +677,7 @@ impl Debugger {
                 let lines = maps.lines();
                 use regex::Regex;
                 let re = Regex::new(
-                    r"^([0-9a-fA-F]+)-([0-9a-fA-F]+) (r|-)(w|-)(x|-)(p|s) ([0-9a-fA-f]+) [0-9]+:[0-9]+ [0-9]+ *(.+)?",
+                    r"^([0-9a-fA-F]+)-([0-9a-fA-F]+) (r|-)(w|-)(x|-)(p|s) ([0-9a-fA-f]+) [0-9a-fA-F]+:[0-9a-fA-F]+ [0-9]+ *(.+)?"
                 )
                 .unwrap();
                 let mut maps: Vec<MemoryMap> = Vec::new();
