@@ -35,7 +35,7 @@ jobs:
         id: adocbuild
         uses: tonynv/asciidoctor-action@master
         with:
-            program: "asciidoctor -D docs --backend=html5 -o index.html -r ./docs/nestingopen.rb docs/index.adoc"
+            program: "asciidoctor -D docs --backend=html5 -r ./docs/nestingopen.rb docs/*.adoc"
       - name: Setup Pages
         uses: actions/configure-pages@v3
       - name: Upload artifact
