@@ -1,0 +1,43 @@
+:hardbreaks:
+:logotitle: Stackium
+:showtitle:
+:stylesheet: monospace.css
+// :toc: left
+
+[.text-center]
+= Stackium
+:description: An education focused debugger
+:url-repo: https://github.com/dotjulia/stackium
+:icons: font
+:toc: preamble
+
+++++
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark-reasonable.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+++++
+
+image::stackiumlogo.png[Logo, 200, 200]
+
+
+image:https://img.shields.io/badge/rustc-%5E1.71.1-orange.svg[] image:https://github.com/dotjulia/stackium/actions/workflows/main.yml/badge.svg[] image:https://shields.io/github/downloads-pre/dotjulia/stackium/latest/total?label=Downloads[Download,link=https://github.com/dotjulia/stackium/releases/latest] image:https://img.shields.io/github/issues/dotjulia/stackium[Issues,link=https://github.com/dotjulia/stackium/issues]
+
+[[navigation]]
+--
+link:index.html[[Home\]] link:beginner_example.html[[Example for Beginners\]] link:windows.html[[Window Overview\]] link:memory_view.html[[Memory View\]]
+--
+
+++++
+<script src="
+https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js
+"></script>
+<link href="
+https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/style.min.css
+" rel="stylesheet">
+<script defer>
+document.addEventListener('DOMContentLoaded', () => mediumZoom('img', {
+    background: '#322342',
+    scrollOffset: 0,
+}));
+</script>
+++++

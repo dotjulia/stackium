@@ -1,0 +1,103 @@
+include::partials/header.adoc[]
+
+[.text-left]
+== Example for Beginners
+Suppose we want to debug this example program saved in file `test.c`:
+[source,c]
+----
+void swap(int* a, int* b)
+{
+  int tmp = *a;
+  *a = *b;
+  *b = tmp;
+}
+
+
+int main()
+{
+  int first = 3;
+  int second = 5;
+  swap(&first, &second);
+  return 0;
+}
+----
+Let's build it using `./build_test.sh test.c` and then launch stackium in web mode: `./stackium test --mode web`.
+
+After following the URL in the terminal, we can see the following:
+
+image::stackium_first.png[Stackium Web Interface]
+
+Now, click on the `Code` window and set breakpoints on all lines by clicking on the circles to the left of them:
+
+[open.imgcols]
+====
+--
+Breakpoints are denoted by filled circles. When the program gets to a line marked as a breakpoint it stops and you can inspect it.
+
+You can verify that the breakpoints have been set by looking at the breakpoint window:
+
+image:breakpoint_window.png[Breakpoint Window]
+--
+image::breakpoints.png[Breakpoints]
+====
+
+[open.imgcols]
+====
+Now click on continue in the controls window (sometimes in gui mode you'll need to click it twice when launching the program for the first time). You can see that the first breakpoint has been hit by the green highlight.
+
+image::first_breakpoint.png[First Breakpoint]
+====
+
+[open.imgcols]
+====
+--
+Open the memory view by clicking the toggle next to `Memory` in the sidebar to find out what is happening behind the scenes.
+
+IMPORTANT: The memory view builds up over time but the GUI doesn't render new frames automatically. If the memory view doesn't seem to update, try moving the mouse cursor. GitHub Issue: https://github.com/dotjulia/stackium/issues/20
+
+
+As you can see, the program allocated memory on the stack for the variable `first` and `second`. Looking at the content, you'll find that they don't have the correct value yet. This is because the program was interrupted before the first line in the main function.
+--
+image::stackium_startmemory.png[Memory View]
+====
+
+[open.imgcols]
+====
+--
+Click on `continue` until we reach the swap function and you'll see that `first` and `second` now contains `3` and `4`. Before we step into the swap function, let's tick the `Lock stack start` checkbox.
+
+It is recommended to do this for such short examples in order to get a better overview. The default behaviour of the memory view is to always try and fit the left stack column to the stack of the current function. By locking the stack start we can see that the stack of the `swap` function is appended to the end of the stack of the `main` function.
+
+At the end there will be a screenshot of how it would have looked like if we did not lock the start of the stack to the stack of the main function.
+--
+--
+image::stackium_integers.png[Content of first and second]
+image::stackium_lockstackstart.png[Lock Stack Start]
+--
+====
+
+[open.imgcols]
+====
+--
+If we press continue now, we can see that in the swap function we have two pointers which point into the stack of the main function.
+
+Now try to observe on your own what happens when you step through the swap function.
+--
+image::stackium_swap.png[Swap Function]
+====
+
+[open.imgcols]
+====
+--
+If we didn't lock the stack to the main function's stack, this is what the swap function would have looked like.
+
+As you can see, only the stack of the swap function is displayed and the pointers `a` and `b` now point to a `[stack]` section in the right column.
+
+The right column always tries to load memory which is pointed to by variables on the stack and dynamically updates based on the pointer's values.
+
+In this case, the stack of the main function is loaded on the right side so you can see what is going on.
+
+We can also see that the `calling base pointer` points to the beginning of the stack of the main function.
+--
+image::stackium_final.png[]
+====

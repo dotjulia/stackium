@@ -76,6 +76,10 @@ a {
   color: var(--linkcolor) !important;
 }
 
+#navigation a {
+  text-decoration: none;
+}
+
 a:hover {
   color: var(--background) !important;
   background-color: var(--linkcolor);
