@@ -18,6 +18,16 @@ pub mod breakpoint;
 pub mod error;
 mod util;
 
+#[cfg(debug_assertions)]
+macro_rules! debug_println {
+    ($($x:tt)*) => { println!($($x)*) }
+}
+
+#[cfg(not(debug_assertions))]
+macro_rules! debug_println {
+    ($($x:tt)*) => {{}};
+}
+
 use crate::{
     debugger::util::{get_function_meta, get_piece_addr},
     prompt::{command_prompt, CommandCompleter},
@@ -99,7 +109,7 @@ impl Debugger {
         let mut iter = dwarf.debug_info.units();
         while let Some(unit) = iter.next().unwrap() {
             let version = unit.version();
-            println!("Dwarf Version = {}", version);
+            debug_println!("Dwarf Version = {}", version);
             if version != 4 {
                 eprintln!("Stackium currently only supports binaries built with dwarf debug version 4. Please compile with the \x1b[1;33m-gdwarf-4\x1b[0m flag!");
                 panic!();
@@ -174,7 +184,7 @@ impl Debugger {
                                     ));
                                     return Ok(Some(known_types));
                                 } else {
-                                    println!("Failed getting type name");
+                                    debug_println!("Failed getting type name");
                                 }
                             }
                             gimli::DW_TAG_const_type => {
@@ -211,17 +221,17 @@ impl Debugger {
                             gimli::DW_TAG_pointer_type => {
                                 if let Ok(Some(type_field)) = node.entry().attr(gimli::DW_AT_type) {
                                     //TODO: Find fix for recursive types
-                                    println!(
+                                    debug_println!(
                                         "Resolving pointer for type {:?}",
                                         unit_offset(type_field.value())
                                     );
-                                    println!("Known types: {:?}", known_types);
+                                    debug_println!("Known types: {:?}", known_types);
                                     let index = known_types.0.iter().position(|e| {
                                         e.0 == unit_offset(type_field.value()).unwrap()
                                     });
                                     if let Some(index) = index {
                                         let mut ret_vec = known_types.clone();
-                                        println!("Type already known");
+                                        debug_println!("Type already known");
                                         ret_vec.0.push((
                                             unit_offset(type_field.value()).unwrap(),
                                             TypeName::Ref { index: Some(index) },
@@ -257,7 +267,9 @@ impl Debugger {
                                         {
                                             lengths.push(count.udata_value().unwrap() as usize);
                                         } else {
-                                            println!("Found child entry but failed getting count");
+                                            debug_println!(
+                                                "Found child entry but failed getting count"
+                                            );
                                         }
                                     }
                                     known_types.0.push((
@@ -291,7 +303,7 @@ impl Debugger {
                                     );
                                     return Ok(Some(known_types));
                                 } else {
-                                    println!("Failed getting array type");
+                                    debug_println!("Failed getting array type");
                                 }
                             }
                             gimli::DW_TAG_structure_type => {
@@ -314,7 +326,7 @@ impl Debugger {
                                     0
                                 };
                                 // Push Structure first in case of self referential struct
-                                println!("Decoding struct: {} {:?}", &name, known_types);
+                                debug_println!("Decoding struct: {} {:?}", &name, known_types);
 
                                 known_types.0.push((
                                     find_offset.0,
@@ -360,7 +372,7 @@ impl Debugger {
                                         let byteoffset = byteoffset.udata_value().unwrap();
                                         types.push((name, index, byteoffset as usize));
                                     } else {
-                                        println!("Failed to decode member type");
+                                        debug_println!("Failed to decode member type");
                                     }
                                 }
                                 known_types.0[struct_index] = (
@@ -374,7 +386,7 @@ impl Debugger {
                                 return Ok(Some(known_types));
                             }
                             _ => {
-                                println!(
+                                debug_println!(
                                     "Invalid entry: {:?}, offset: {:?}",
                                     node.entry().tag(),
                                     node.entry().offset()
@@ -382,7 +394,7 @@ impl Debugger {
                                 return Err(DebugError::InvalidType);
                             }
                         }
-                        println!(
+                        debug_println!(
                             "Failed parsing entry: {:?}, offset: {:?}",
                             node.entry().tag(),
                             node.entry().offset()
@@ -410,10 +422,10 @@ impl Debugger {
                     return Ok(t);
                 }
             }
-            println!("Didn't find header");
+            debug_println!("Didn't find header");
             Err(DebugError::InvalidType)
         } else {
-            println!("Invalid offset type");
+            debug_println!("Invalid offset type");
             Err(DebugError::InvalidType)
         }
     }
@@ -478,7 +490,7 @@ impl Debugger {
         let mut curr_high_pc = 0u64;
         let mut curr_low_pc = 0u64;
         iter_every_entry!(self, sub_entry unit | {
-            // println!("{:#?}", tag_to_string(sub_entry.tag()));
+            // debug_println!("{:#?}", tag_to_string(sub_entry.tag()));
             if sub_entry.tag() == gimli::DW_TAG_subprogram || sub_entry.tag() == gimli::DW_TAG_lexical_block{
 
                 if let Ok(Some(lpc)) = sub_entry.attr_value(gimli::DW_AT_low_pc) {
@@ -486,7 +498,7 @@ impl Debugger {
                         gimli::AttributeValue::Addr(addr) => {
                             curr_low_pc = addr;
                         },
-                        _ => { println!("unexpected low pc value: {:#?}", lpc); }
+                        _ => { debug_println!("unexpected low pc value: {:#?}", lpc); }
                     }
                 }
 
@@ -744,12 +756,14 @@ impl Debugger {
             }
             Command::SetBreakpoint(a) => match a {
                 BreakpointPoint::Name(name) => {
-                    println!("Name: '{}'", &name);
+                    debug_println!("Name: '{}'", &name);
                     let func = find_function_from_name(&self.dwarf, name)?;
                     if let Some(addr) = func.low_pc {
-                        println!(
+                        debug_println!(
                             "Setting breakpoint at function: {:?} {:#x} for {:?}",
-                            func.name, addr, self.child
+                            func.name,
+                            addr,
+                            self.child
                         );
                         if self.breakpoints.iter().any(|b| b.address == addr) {
                             return Err(DebugError::BreakpointInvalidState);
@@ -759,12 +773,12 @@ impl Debugger {
                         breakpoint.enable(self.child)?;
                         self.breakpoints.push(breakpoint);
                     } else {
-                        println!("Couldn't find function: {:?}", func.name);
+                        debug_println!("Couldn't find function: {:?}", func.name);
                     }
                     Ok(CommandOutput::None)
                 }
                 BreakpointPoint::Address(addr) => {
-                    println!("Setting breakpoint at address: {:?}", addr);
+                    debug_println!("Setting breakpoint at address: {:?}", addr);
 
                     if self.breakpoints.iter().any(|b| b.address == addr) {
                         return Err(DebugError::BreakpointInvalidState);
@@ -776,7 +790,7 @@ impl Debugger {
                     Ok(CommandOutput::None)
                 }
                 BreakpointPoint::Location(location) => {
-                    println!("Setting a breakpoint at location: {:?}", location);
+                    debug_println!("Setting a breakpoint at location: {:?}", location);
                     let addr = get_addr_from_line(&self.dwarf, location.line, location.file)?;
 
                     if self.breakpoints.iter().any(|b| b.address == addr) {
@@ -846,7 +860,7 @@ impl Debugger {
 
     fn read_memory(&self, addr: u64, len: u64) -> Result<Vec<u8>, DebugError> {
         let mut values = vec![];
-        println!("Reading @ {:#x} : {}", addr, len);
+        debug_println!("Reading @ {:#x} : {}", addr, len);
         for i in 0..len {
             let v = ptrace::read(self.child, (addr + i as u64) as *mut c_void)?;
             values.push((v & 0xFF) as u8);
@@ -957,13 +971,15 @@ impl Debugger {
         match waitpid(self.child, flags) {
             Ok(s) => match s {
                 nix::sys::wait::WaitStatus::Exited(pid, status) => {
-                    println!("Child {} exited with status: {}", pid, status);
+                    debug_println!("Child {} exited with status: {}", pid, status);
                     Ok(())
                 }
                 nix::sys::wait::WaitStatus::Signaled(pid, status, coredump) => {
-                    println!(
+                    debug_println!(
                         "Child {} signaled with status: {} and coredump: {}",
-                        pid, status, coredump
+                        pid,
+                        status,
+                        coredump
                     );
                     Ok(())
                 }
@@ -973,43 +989,47 @@ impl Debugger {
                             let siginfo = nix::sys::ptrace::getsiginfo(pid)?;
                             // I think nix doesn't have a constant for this
                             if siginfo.si_code == 128 {
-                                println!("Hit breakpoint!");
+                                debug_println!("Hit breakpoint!");
 
                                 // step back one instruction
                                 self.set_pc(self.get_pc()? - 1)?;
                             } else {
-                                println!(
+                                debug_println!(
                                     "Child {} stopped with {:?} and code {}",
-                                    pid, siginfo, siginfo.si_code
+                                    pid,
+                                    siginfo,
+                                    siginfo.si_code
                                 );
                             }
                         }
                         _ => {
-                            println!("Child {} stopped with signal: {}", pid, signal);
+                            debug_println!("Child {} stopped with signal: {}", pid, signal);
                         }
                     }
                     Ok(())
                 }
                 nix::sys::wait::WaitStatus::Continued(pid) => {
-                    println!("Child {} continued", pid);
+                    debug_println!("Child {} continued", pid);
                     Ok(())
                 }
                 #[cfg(target_os = "linux")]
                 nix::sys::wait::WaitStatus::StillAlive => {
-                    println!("Child is still alive");
+                    debug_println!("Child is still alive");
                     Ok(())
                 }
                 #[cfg(target_os = "linux")]
                 nix::sys::wait::WaitStatus::PtraceEvent(pid, signal, int) => {
-                    println!(
+                    debug_println!(
                         "Child {} ptrace event with signal: {} and int: {}",
-                        pid, signal, int
+                        pid,
+                        signal,
+                        int
                     );
                     Ok(())
                 }
                 #[cfg(target_os = "linux")]
                 nix::sys::wait::WaitStatus::PtraceSyscall(pid) => {
-                    println!("Child {} ptrace syscall", pid);
+                    debug_println!("Child {} ptrace syscall", pid);
                     Ok(())
                 }
             },
@@ -1021,7 +1041,7 @@ impl Debugger {
         match self.step_breakpoint() {
             Ok(_) => (),
             Err(DebugError::NoBreakpointFound) => {
-                println!("Warning: continuing execution from non-breakpoint");
+                debug_println!("Warning: continuing execution from non-breakpoint");
             }
             Err(e) => return Err(e),
         }
