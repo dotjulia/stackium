@@ -1,1 +1,1 @@
-* suppress debug prints in release mode
+* remove step in/step over button

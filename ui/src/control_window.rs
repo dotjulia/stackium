@@ -41,21 +41,21 @@ impl DebuggerWindowImpl for ControlWindow {
             },
             None => {
                 let r = ui.button("Continue");
-                if ui.button("Step Over").clicked() {
-                    self.promise = Some(dispatch_command_and_then(
-                        self.backend_url.clone(),
-                        Command::StepOut,
-                        |_| {},
-                    ));
-                }
+                // if ui.button("Step Over").clicked() {
+                //     self.promise = Some(dispatch_command_and_then(
+                //         self.backend_url.clone(),
+                //         Command::StepOut,
+                //         |_| {},
+                //     ));
+                // }
 
-                if ui.button("Step In").clicked() {
-                    self.promise = Some(dispatch_command_and_then(
-                        self.backend_url.clone(),
-                        Command::StepIn,
-                        |_| {},
-                    ));
-                }
+                // if ui.button("Step In").clicked() {
+                //     self.promise = Some(dispatch_command_and_then(
+                //         self.backend_url.clone(),
+                //         Command::StepIn,
+                //         |_| {},
+                //     ));
+                // }
 
                 if ui.button("Step Instruction").clicked() {
                     self.promise = Some(dispatch_command_and_then(
