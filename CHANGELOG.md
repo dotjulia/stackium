@@ -1,1 +1,1 @@
-* dynamically & statically linked binary
+* suppress debug prints in release mode
