@@ -1,7 +1,7 @@
 include::partials/header.adoc[]
 
 [.text-left]
-== Example for Beginners
+== Basic Example
 Suppose we want to debug this example program saved in file `test.c`:
 [source,c]
 ----
@@ -101,3 +101,155 @@ We can also see that the `calling base pointer` points to the beginning of the s
 --
 image::stackium_final.png[]
 ====
+
+[.text-left]
+== Linked List Example
+Consider the following example program:
+[source,c]
+--
+include::graph.c[]
+--
+We have a struct `Node` which contains a pointer to another `Node` and an integer value. In the main function we have a variable `head` which points to the first element of the linked list. At the beginning we set this to the `NULL` pointer.
+
+We read from `stdin` how many nodes we want to create and then iterate over them. For each node we allocate memory on the heap and set the `next` pointer to the head of the linked list. Then we set the head to the newly created node. Meaning that the new node is now the first element of the linked list.
+
+Finally, we iterate over the linked list again and print the values of each node.
+
+Let's build it using `./build_test.sh graph.c` and then launch stackium in web mode: `./stackium graph --mode web`. After opening the URL in a browser, let's set a breakpoint on the line with the for loop in the main function and press continue.
+
+image::img/ll_init.jpg[Graph First]
+
+You can see, that the control window displays a spinning loading icon. This is because the program is waiting for input from stdin. Let's enter `3` in the terminal and press enter.
+
+image::img/ll_entered.jpg[Graph Second]
+
+The spinning icon is gone and we can see that we hit the breakpoint. If you look at the memory view, you can see that the variable `head` is set to `NULL` and the stack is empty. Let's create the first node by setting the next breakpoint in the loop and pressing continue.
+
+[.imgcols]
+--
+image::img/ll_loop.jpg[Graph Third]
+image::img/ll_memviewbeginning.jpg[Graph Mem View]
+--
+
+We can see that the `node` pointer points to a `[heap]` section in the memory view. This is because we allocated memory on the heap using `malloc`. If you look at the right column, you can see that a Node struct was allocated and the `next` pointer points to the `NULL` pointer. This is because we set the `next` pointer to the head of the linked list which is `NULL` at the moment.
+
+[.imgcols]
+--
+[open]
+====
+Let's open the graph view by clicking on the `Graph` toggle in the sidebar.
+After opening it you'll see the following:
+
+In the graph view every variable (also variables that will only be initialized later) is represented by a node. You can drag nodes by holding the left mouse button while hovering over them. Now move the `_Node_*` that is connected to the `_Node_` node to get a better overview.
+====
+
+image::img/ll_graph_first.jpg[Graph First]
+--
+TIP: In the current version of stackium, nodes in the graph view also contain the name of the variable they represent (if they have one). This is useful if you want to find a specific variable in the graph view.
+
+[.imgcols]
+--
+After reorganizing the graph view, it should look like this:
+
+image::img/ll_graph_second.jpg[Graph Second]
+--
+
+Let's set a breakpoint on the `head = node;` line and press continue a few times until we hit it in the next iteration of the loop.
+
+TIP: If you used all the breakpoints mentioned, it should be 3 times.
+
+[.imgcols]
+--
+[open]
+====
+We can now see the following in the graph view:
+
+We have two pointers referencing the same node. This is because the `head` pointer points to the first element of the linked list and the `node` pointer points to the newly created node which is now the first element of the linked list.
+====
+
+image::img/ll_twonodes.jpg[Two nodes]
+--
+
+After one more iteration of the loop, the graph view will look like this:
+
+[.text-center]
+image::img/ll_threenodes.jpg[Three nodes]
+
+
+
+[.imgcols]
+--
+We can also observe how printing the linked list works. To do that, let's set a breakpoint on the `printf` line and press continue until we hit it.
+
+image::img/ll_breakpoint2.jpg[Breakpoints]
+--
+
+Suddenly, we have three pointers pointing to the same node. This is because the `head` pointer, the previous `node` pointer and the current `node` pointer points to the first element of the linked list.
+
+[.text-center]
+image::img/ll_print1.jpg[Print 1]
+
+We can see that this is the case when we continue to the next iteration of the loop.
+
+[.text-center]
+image::img/ll_print2.jpg[Print 2]
+
+The loop iteration variable `node` is now pointing to the second element of the linked list. The `head` pointer and the previous `node` pointer still point to the first element of the linked list.
+Additionally, in the console we see the value of the first element of the linked list.
+```bash
+30
+```
+
+Continuing to the next iteration of the loop, we can see that the `node` pointer now points to the third element of the linked list.
+
+[.text-center]
+image::img/ll_print3.jpg[Print 3]
+Output:
+```bash
+30 20
+```
+
+WARNING: If you're confused on why we always see the value of the node in the console one iteration later, this is because the breakpoint being on the `printf` line means that the program is interrupted before `printf` is called. This means that the value of the node is printed after the program continues to the next iteration of the loop.
+
+At the end of the program we can observe the following output in the console:
+
+```bash
+30 20 10
+```
+
+We can also inspect the linked list in the memory view to see that the `head` pointer points to the first element of the linked list and the `node` pointer points to the last element of the linked list.
+
+[.text-center]
+image::img/ll_memory_final.png[Final]
+
+[.text-left]
+== Finding Memory Errors with Stackium
+Stackium can also be used to easily see memory errors in your program. Let's consider the following example program:
+[source,c]
+--
+include::error.c[]
+--
+
+In this example we define an array on the stack, define a pointer to its first element and then iterate over it by incrementing the pointer.
+
+Let's set a breakpoint on the last line of the while loop and press continue until we hit it.
+
+image::img/error_start.png[Error breakpoint]
+
+We can see that the `current_element` pointer points to the first element of the array and the int contains the value `0xABC`. Let's continue to the next iteration of the loop.
+
+image::img/error_loopsecond.png[Second element]
+
+As we can see, the `current_element` pointer now points to the second element of the array. Let's look at another iteration of the loop.
+
+image::img/error_loopthird.png[Third element]
+
+Skip a few iterations of the loop and we can see that the `current_element` pointer now points to the last element of the array and all the elements have been set to `0xABC`:
+
+image::img/error_lastelement.png[Last element]
+
+After clicking continue one more time, we can see that the program accesses the array out of bounds:
+
+image::img/error_oobaccess.png[]
+
+We found our memory error and can fix it by reducing the number of iterations in the while loop by one. This can be done by iterating until `current_element < numbers + NUMBER_COUNT` instead of `current_element <= numbers + NUMBER_COUNT`.

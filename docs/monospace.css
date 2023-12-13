@@ -61,6 +61,11 @@ body {
   margin-bottom: 1em;
 }
 
+.exampleblock,
+.exampleblock>.content {
+  background-color: var(--background)
+}
+
 code,
 pre.highlight {
   background: var(--sidebarbackground) !important;
@@ -91,7 +96,7 @@ a:hover {
 }
 
 .admonitionblock td.icon .icon-tip::before {
-  color: lightblue;
+  color: white;
   text-shadow: none;
 }
 
@@ -169,6 +174,7 @@ img:not([alt='Logo']) {
 .imgcols>.content {
   display: flex;
   flex-direction: row;
+  align-items: center;
   gap: 1em;
 }
 

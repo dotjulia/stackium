@@ -4,7 +4,6 @@
 int main()
 {
   int numbers[NUMBER_COUNT];
-  // i < NUMBER_COUNT
   int* current_element = numbers;
   while(current_element <= numbers + NUMBER_COUNT)
   {
