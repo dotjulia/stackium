@@ -22,7 +22,6 @@ pub struct CodeWindow {
     displaying_file: String,
     file: Promise<Result<String, String>>,
     breakpoints: Promise<Result<Vec<Breakpoint>, String>>,
-    code_theme: CodeTheme,
     create_breakpoint_request: Option<Promise<Result<(), String>>>,
     location: Promise<Result<Location, String>>,
     disassembly: Promise<Result<String, String>>,
@@ -38,7 +37,6 @@ impl CodeWindow {
             selected_file: String::new(),
             file: Promise::from_ready(Err(String::new())),
             displaying_file: String::new(),
-            code_theme: Default::default(),
             breakpoints: Promise::from_ready(Err(String::new())),
             create_breakpoint_request: None,
             location: Promise::from_ready(Err(String::new())),
@@ -146,7 +144,8 @@ impl CodeWindow {
                                                         code_view_ui(
                                                             ui,
                                                             line,
-                                                            &self.code_theme.clone(),
+                                                            &CodeTheme::from_style(ui.style()),
+
                                                             "asm"
                                                         )
                                                     },
@@ -157,7 +156,7 @@ impl CodeWindow {
                                             code_view_ui(
                                                 ui,
                                                 &mut line.to_owned(),
-                                                &self.code_theme,
+                                                            &CodeTheme::from_style(ui.style()),
                                                 "asm"
                                             );
                                         }
@@ -261,12 +260,19 @@ impl CodeWindow {
                                 ui.put(rect, |ui: &mut egui::Ui| {
                                     ui.with_layout(
                                         egui::Layout::left_to_right(egui::Align::Min),
-                                        |ui| code_view_ui(ui, line, &self.code_theme.clone(), "c"),
+                                        |ui| {
+                                            code_view_ui(
+                                                ui,
+                                                line,
+                                                &CodeTheme::from_style(ui.style()),
+                                                "c",
+                                            )
+                                        },
                                     )
                                     .response
                                 });
                             } else {
-                                code_view_ui(ui, line, &self.code_theme, "c");
+                                code_view_ui(ui, line, &CodeTheme::from_style(ui.style()), "c");
                             }
                         });
                     });
@@ -402,9 +408,9 @@ impl DebuggerWindowImpl for CodeWindow {
             }
         }
 
-        CollapsingHeader::new("Theme").show(ui, |ui| {
-            self.code_theme.ui(ui);
-        });
+        // CollapsingHeader::new("Theme").show(ui, |ui| {
+        // self.code_theme.ui(ui);
+        // });
         (dirty, ui.label("Code window"))
     }
 }

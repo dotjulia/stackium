@@ -110,13 +110,10 @@ impl StackiumApp {
 }
 
 impl eframe::App for StackiumApp {
-    fn post_rendering(&mut self, _window_size_px: [u32; 2], _frame: &eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         if let Some(next_state) = self.next_state.take() {
             self.state = next_state;
         }
-    }
-
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         if let State::Debugging {
             sidebar_open: _,
             backend_url: _,
@@ -131,7 +128,7 @@ impl eframe::App for StackiumApp {
                 self.next_state = Some(State::UnrecoverableFailure {
                     message: "Child process exited".to_owned(),
                 });
-                return;
+                // return;
             }
             for window in windows {
                 window.body.update(ctx, frame);
@@ -146,11 +143,14 @@ impl eframe::App for StackiumApp {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             // The top panel is often a good place for a menu bar:
             egui::menu::bar(ui, |ui| {
+                // #[cfg(not(target_arch = "wasm32"))] // no File->Quit on web pages!
                 ui.menu_button("File", |ui| {
                     if ui.button("Quit").clicked() {
                         frame.close();
                     }
                 });
+
+                egui::widgets::global_dark_light_mode_buttons(ui);
             });
         });
 
@@ -164,7 +164,8 @@ impl eframe::App for StackiumApp {
                 fullscreen,
                 mapping,
             } => {
-                egui::SidePanel::left("side_pabel").show_animated(ctx, *sidebar_open, |ui| {
+                egui::SidePanel::left("side_panel").show_animated(ctx, *sidebar_open, |ui| {
+                    egui::widgets::global_dark_light_mode_buttons(ui);
                     let texture = icon.get_or_insert_with(|| {
                         let icon = include_bytes!("../assets/icon-1024.png");
                         let image = match load_image_from_memory(icon) {
@@ -287,6 +288,7 @@ impl eframe::App for StackiumApp {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     ui.heading("Error");
                     ui.label(message.clone());
+                    ui.label("Please restart the debugger".to_owned());
                 });
             }
         }
