@@ -1,1 +1,2 @@
-* remove step in/step over button
+* graph nodes now stay at the same position between updates
+* graph nodes display variable names
