@@ -1,1 +1,1 @@
-* segfault handling
+* code window highlight readability

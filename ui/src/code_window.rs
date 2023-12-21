@@ -257,11 +257,19 @@ impl CodeWindow {
                                 None => false,
                             } {
                                 let (rect, _) = ui.allocate_exact_size(
-                                    egui::Vec2::new(6.6 * line.len() as f32, 15.),
+                                    egui::Vec2::new(
+                                        self.code_size * 0.8 * line.len() as f32,
+                                        self.code_size * 1.2,
+                                    ),
                                     egui::Sense::hover(),
                                 );
-                                ui.painter()
-                                    .rect_filled(rect, 2., egui::Color32::LIGHT_GREEN);
+                                if ui.style().visuals.dark_mode {
+                                    ui.painter()
+                                        .rect_filled(rect, 2., egui::Color32::DARK_GREEN);
+                                } else {
+                                    ui.painter()
+                                        .rect_filled(rect, 2., egui::Color32::LIGHT_GREEN);
+                                }
                                 ui.put(rect, |ui: &mut egui::Ui| {
                                     ui.with_layout(
                                         egui::Layout::left_to_right(egui::Align::Min),
