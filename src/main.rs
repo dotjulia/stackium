@@ -21,6 +21,7 @@ use debugger::error::DebugError;
 use nix::sys::ptrace;
 use nix::unistd::ForkResult::{Child, Parent};
 use nix::unistd::{execv, fork, getcwd, Pid};
+#[cfg(feature = "web")]
 use web::start_webserver;
 
 use crate::debugger::Debugger;
@@ -28,6 +29,7 @@ use crate::debugger::Debugger;
 mod debugger;
 mod prompt;
 mod util;
+mod variables;
 #[cfg(feature = "web")]
 mod web;
 

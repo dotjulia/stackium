@@ -791,7 +791,7 @@ impl VariableWindow {
                 Some(s) => {
                     if let Some(Ok(stack)) = s.ready() {
                         //TODO: find a solution for the window height
-                        ScrollArea::vertical().max_height(900.0).show(ui, |ui| {
+                        ScrollArea::vertical().max_height(700.0).show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 let height = 15.0;
                                 egui_extras::TableBuilder::new(ui)

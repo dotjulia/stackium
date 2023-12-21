@@ -53,6 +53,7 @@ pub enum CommandOutput {
     Data(u64),
     Memory(Vec<u8>),
     Variables(Vec<Variable>),
+    DiscoveredVariables(Vec<DiscoveredVariable>),
     FunctionMeta(FunctionMeta),
     CodeWindow(Vec<(u64, String, bool)>),
     Registers(Registers),
@@ -163,6 +164,18 @@ pub struct Variable {
     pub low_pc: u64,
 }
 
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, Clone)]
+pub struct DiscoveredVariable {
+    pub name: Option<String>,
+    pub types: DataType,
+    pub type_index: usize,
+    pub file: Option<String>,
+    pub line: Option<u64>,
+    pub addr: Option<u64>,
+    pub high_pc: u64,
+    pub low_pc: u64,
+}
+
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DwarfAttribute {
     pub name: String,
@@ -241,7 +254,11 @@ pub enum Command {
     /// For debugging purposes
     WaitPid,
     /// Read all variables found in the debug symbols
+    #[deprecated(note = "Use DiscoverVariables instead")]
     ReadVariables,
+    /// Discovers variables, returns all variables from ReadVariables and additionally variables on
+    /// the heap
+    DiscoverVariables,
     /// Set a breakpoints at the specified location
     SetBreakpoint(BreakpointPoint),
     /// Retrieve all current breakpoints
@@ -280,6 +297,7 @@ impl FromStr for Command {
             "backtrace" => Ok(Command::Backtrace),
             "step_in" => Ok(Command::StepIn),
             "read_variables" => Ok(Command::ReadVariables),
+            "discover_variables" => Ok(Command::DiscoverVariables),
             "debug_meta" => Ok(Command::DebugMeta),
             "read" => Ok(Command::Read(
                 u64::from_str_radix(

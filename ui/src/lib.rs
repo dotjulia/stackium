@@ -11,6 +11,7 @@ mod frame_history;
 mod graph_window;
 mod location;
 mod map_window;
+mod memory_window;
 mod register_window;
 mod settings_window;
 mod syntax_highlighting;

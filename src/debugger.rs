@@ -483,7 +483,7 @@ impl Debugger {
         Ok(value)
     }
 
-    fn read_variables(&self) -> Result<Vec<Variable>, DebugError> {
+    pub fn read_variables(&self) -> Result<Vec<Variable>, DebugError> {
         let mut sub_entry;
         let mut unit;
         let mut variables = Vec::new();
@@ -682,32 +682,34 @@ impl Debugger {
         })
     }
 
-    pub fn process_command(&mut self, command: Command) -> Result<CommandOutput, DebugError> {
-        match command {
-            Command::Maps => {
-                let maps = std::fs::read_to_string(format!("/proc/{}/maps", self.child))?;
-                let lines = maps.lines();
-                use regex::Regex;
-                let re = Regex::new(
+    pub fn get_maps(&self) -> Result<Vec<MemoryMap>, DebugError> {
+        let maps = std::fs::read_to_string(format!("/proc/{}/maps", self.child))?;
+        let lines = maps.lines();
+        use regex::Regex;
+        let re = Regex::new(
                     r"^([0-9a-fA-F]+)-([0-9a-fA-F]+) (r|-)(w|-)(x|-)(p|s) ([0-9a-fA-f]+) [0-9a-fA-F]+:[0-9a-fA-F]+ [0-9]+ *(.+)?"
                 )
                 .unwrap();
-                let mut maps: Vec<MemoryMap> = Vec::new();
-                for line in lines {
-                    let captures = re.captures(line).unwrap();
-                    maps.push(MemoryMap {
-                        from: u64::from_str_radix(&captures[1], 16).unwrap(),
-                        to: u64::from_str_radix(&captures[2], 16).unwrap(),
-                        read: &captures[3] == "r",
-                        write: &captures[4] == "w",
-                        execute: &captures[5] == "x",
-                        shared: &captures[6] == "s",
-                        offset: u64::from_str_radix(&captures[7], 16).unwrap(),
-                        mapped: captures.get(8).map_or("", |m| m.as_str()).to_owned(),
-                    });
-                }
-                Ok(CommandOutput::Maps(maps))
-            }
+        let mut maps: Vec<MemoryMap> = Vec::new();
+        for line in lines {
+            let captures = re.captures(line).unwrap();
+            maps.push(MemoryMap {
+                from: u64::from_str_radix(&captures[1], 16).unwrap(),
+                to: u64::from_str_radix(&captures[2], 16).unwrap(),
+                read: &captures[3] == "r",
+                write: &captures[4] == "w",
+                execute: &captures[5] == "x",
+                shared: &captures[6] == "s",
+                offset: u64::from_str_radix(&captures[7], 16).unwrap(),
+                mapped: captures.get(8).map_or("", |m| m.as_str()).to_owned(),
+            });
+        }
+        Ok(maps)
+    }
+
+    pub fn process_command(&mut self, command: Command) -> Result<CommandOutput, DebugError> {
+        match command {
+            Command::Maps => Ok(CommandOutput::Maps(self.get_maps()?)),
             Command::Disassemble => Ok(CommandOutput::File(
                 std::str::from_utf8(
                     &std::process::Command::new("objdump")
@@ -733,6 +735,9 @@ impl Debugger {
             Command::Help => Ok(CommandOutput::Help(CommandCompleter::default().commands)),
             Command::Backtrace => Ok(CommandOutput::Backtrace(self.backtrace()?)),
             Command::ReadVariables => Ok(CommandOutput::Variables(self.read_variables()?)),
+            Command::DiscoverVariables => Ok(CommandOutput::DiscoveredVariables(
+                self.discover_variables()?,
+            )),
             Command::Read(addr) => Ok(CommandOutput::Data(self.read(addr as *mut _)?)),
             Command::Continue => {
                 self.continue_exec()?;
@@ -851,7 +856,7 @@ impl Debugger {
         }
     }
 
-    fn read(&self, addr: *mut c_void) -> Result<u64, DebugError> {
+    pub fn read(&self, addr: *mut c_void) -> Result<u64, DebugError> {
         match ptrace::read(self.child, addr) {
             Ok(d) => Ok(d as u64),
             Err(e) => Err(DebugError::NixError(e)),
