@@ -1,7 +1,7 @@
 [package]
 name = "stackium"
 author = "Julia Herbsthofer"
-version = "0.1.22"
+version = "0.1.23"
 edition = "2021"
 rust-version = "1.71.1"
 license = "MIT"
@@ -10,7 +10,7 @@ license = "MIT"
 
 [features]
 default = ["web"]
-web = []
+web = ["dep:stackium_ui"]
 
 [dependencies]
 nix = { version = "0.26.2", features = ["default", "personality"] }
@@ -24,7 +24,7 @@ gimli = "0.27.3"
 env_logger = "0.10.0"
 schemars = "0.8.12"
 stackium_shared = { path = "./stackium_shared" }
-stackium_ui = { path = "./ui" }
+stackium_ui = { path = "./ui", optional = true }
 include_dir = "0.7.3"
 mime_guess = "2.0.4"
 regex = "1.9.5"

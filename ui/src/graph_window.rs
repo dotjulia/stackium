@@ -1,6 +1,6 @@
 use egui::{FontId, Rect, Response, Sense, Stroke, Ui, Vec2};
 use poll_promise::Promise;
-use stackium_shared::{Command, CommandOutput, DataType, MemoryMap, Variable};
+use stackium_shared::{Command, CommandOutput, DataType, MemoryMap, Registers, Variable};
 use url::Url;
 
 use crate::{debugger_window::DebuggerWindowImpl, variable_window::get_byte_size};
@@ -223,6 +223,7 @@ pub struct GraphWindow {
     variables: Promise<Result<Vec<Variable>, String>>,
     mapping: Promise<Result<Vec<MemoryMap>, String>>,
     additional_loaded_sections: Vec<Section>,
+    registers: Promise<Result<Registers, String>>,
 }
 
 impl GraphWindow {
@@ -233,6 +234,7 @@ impl GraphWindow {
             variables: Promise::from_ready(Err(String::new())),
             mapping: Promise::from_ready(Err(String::new())),
             additional_loaded_sections: vec![],
+            registers: Promise::from_ready(Err(String::new())),
         };
         ret.dirty();
         ret
@@ -245,12 +247,19 @@ impl DebuggerWindowImpl for GraphWindow {
         // self.graph.nodes = vec![];
         self.variables = dispatch!(self.backend_url.clone(), Command::ReadVariables, Variables);
         self.mapping = dispatch!(self.backend_url.clone(), Command::Maps, Maps);
+        self.registers = dispatch!(self.backend_url.clone(), Command::GetRegister, Registers);
     }
     fn ui(&mut self, ui: &mut egui::Ui) -> (bool, egui::Response) {
         let mut found_vars = vec![];
-        if let (Some(Ok(mapping)), Some(Ok(variables))) =
-            (self.mapping.ready(), self.variables.ready())
-        {
+        if let (Some(Ok(mapping)), Some(Ok(variables)), Some(Ok(registers))) = (
+            self.mapping.ready(),
+            self.variables.ready(),
+            self.registers.ready(),
+        ) {
+            let variables = variables
+                .iter()
+                .filter(|v| v.low_pc <= registers.rip && registers.rip <= v.high_pc)
+                .collect::<Vec<_>>();
             for variable in variables {
                 if let (Some(addr), Some(types)) = (variable.addr, &variable.type_name) {
                     found_vars.append(&mut check_variable_recursive(

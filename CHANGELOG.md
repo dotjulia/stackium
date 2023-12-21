@@ -1,1 +1,1 @@
-* font size slides for code window
+* minor fixes
