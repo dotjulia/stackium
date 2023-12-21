@@ -482,7 +482,7 @@ fn render_heap_variable(
         sections,
         addr + get_byte_size(types, type_index) as u64 - 1,
     ) - 3.5;
-    let bottom = get_section_y(rect, sections, addr) - 1.5;
+    let bottom = get_section_y(rect, sections, addr) + 3.5; // - 1.5;
     render_var_line(
         ui,
         rect,
