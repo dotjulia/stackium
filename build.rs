@@ -43,7 +43,7 @@ fn main() -> Result<(), ()> {
     return match Command::new("trunk")
         .current_dir(format!("{}/ui", base_dir))
         .arg("build")
-        // .arg("--release")
+        .arg("--release")
         .output()
     {
         Ok(output) => {

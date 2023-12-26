@@ -258,7 +258,10 @@ impl DebuggerWindowImpl for GraphWindow {
         ) {
             let variables = variables
                 .iter()
-                .filter(|v| v.low_pc <= registers.rip && registers.rip <= v.high_pc)
+                .filter(|v| {
+                    v.low_pc <= registers.instruction_pointer
+                        && registers.instruction_pointer <= v.high_pc
+                })
                 .collect::<Vec<_>>();
             for variable in variables {
                 if let (Some(addr), Some(types)) = (variable.addr, &variable.type_name) {

@@ -52,7 +52,7 @@ jobs:
       - name: Build stackium dynamic
         run: cargo build --release --target x86_64-unknown-linux-gnu
       - name: Build stackium aarch64
-        run: cargo build --release --target aarch64-unknown-linux-gnu --manifest-path Aarch64.toml
+        run: mv Aarch64Cargo.toml Cargo.toml && cargo build --release --target aarch64-unknown-linux-gnu --manifest-path Aarch64.toml
       - name: Rename artifacts
         run: mv target/x86_64-unknown-linux-musl/release/stackium target/x86_64-unknown-linux-musl/release/stackium_static && mv target/aaarch64-unknown-linux-gnu/release/stackium target/aaarch64-unknown-linux-gnu/release/stackium_aaarch64
       - name: Release
