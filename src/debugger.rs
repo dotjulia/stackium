@@ -1,6 +1,5 @@
 use gimli::{EvaluationResult, Reader};
 use nix::{
-    libc::user_regs_struct,
     sys::{
         ptrace,
         wait::{waitpid, WaitPidFlag},
@@ -16,6 +15,7 @@ use std::{ffi::c_void, fs, path::PathBuf, rc::Rc, sync::Arc};
 
 pub mod breakpoint;
 pub mod error;
+pub mod registers;
 mod util;
 
 #[cfg(debug_assertions)]
@@ -29,9 +29,12 @@ macro_rules! debug_println {
 }
 
 use crate::{
-    debugger::util::{get_function_meta, get_piece_addr},
+    debugger::{
+        registers::FromUserRegsStruct,
+        util::{get_function_meta, get_piece_addr},
+    },
     prompt::{command_prompt, CommandCompleter},
-    util::{dw_at_to_string, tag_to_string, FromUserRegsStruct},
+    util::{dw_at_to_string, tag_to_string},
 };
 
 use self::{
@@ -430,37 +433,6 @@ impl Debugger {
         }
     }
 
-    fn get_register_from_abi(&self, reg: u16) -> Result<u64, DebugError> {
-        let registers = self.get_registers()?;
-        match reg {
-            0 => Ok(registers.rax),
-            1 => Ok(registers.rdx),
-            2 => Ok(registers.rcx),
-            3 => Ok(registers.rbx),
-            4 => Ok(registers.rsi),
-            5 => Ok(registers.rdi),
-            6 => Ok(registers.rbp),
-            7 => Ok(registers.rsp),
-            8 => Ok(registers.r8),
-            9 => Ok(registers.r9),
-            10 => Ok(registers.r10),
-            11 => Ok(registers.r11),
-            12 => Ok(registers.r12),
-            13 => Ok(registers.r13),
-            14 => Ok(registers.r14),
-            15 => Ok(registers.r15),
-            16 => Ok(registers.rip),
-            17 => Ok(registers.eflags),
-            18 => Ok(registers.cs),
-            19 => Ok(registers.ss),
-            20 => Ok(registers.ds),
-            21 => Ok(registers.es),
-            22 => Ok(registers.fs),
-            23 => Ok(registers.gs),
-            _ => Err(DebugError::InvalidRegister),
-        }
-    }
-
     fn retrieve_pieces<T: gimli::Reader>(
         &self,
         pieces: Vec<gimli::Piece<T>>,
@@ -522,7 +494,7 @@ impl Debugger {
                                 result = evaluation.resume_with_register(gimli::Value::U64(value))?;
                             },
                             EvaluationResult::RequiresFrameBase => {
-                                let base_pointer = self.get_registers()?.rbp;
+                                let base_pointer = Registers::from_regs(self.get_registers()?).base_pointer;
                                 result = evaluation.resume_with_frame_base(base_pointer)?;
 
                             },
@@ -602,7 +574,7 @@ impl Debugger {
         let pc = self.get_pc()?;
         let mut func_meta = self.get_func_from_addr(pc)?;
         bt.push(func_meta.clone());
-        let mut frame_pointer = self.get_registers()?.rbp;
+        let mut frame_pointer = Registers::from_regs(self.get_registers()?).base_pointer;
         let mut return_addr = self.read((frame_pointer + 8) as *mut _)?;
         let mut max_depth = 20;
         while func_meta.name != Some("main".to_string()) {
@@ -632,8 +604,7 @@ impl Debugger {
         &self,
         window: usize,
     ) -> Result<Vec<(u64, String, bool)>, DebugError> {
-        let regs = self.get_registers().unwrap();
-        let pc = regs.rip;
+        let pc = Registers::from_regs(self.get_registers()?).instruction_pointer;
         let line = get_line_from_pc(&self.dwarf, pc)?;
         let mut lines = Vec::new();
         let file = fs::read_to_string(line.file).unwrap();
@@ -750,10 +721,9 @@ impl Debugger {
             }
             Command::StepIn => self.step_in().map(|_| CommandOutput::None),
             Command::StepInstruction => self.step_instruction().map(|_| CommandOutput::None),
-            Command::ProgramCounter => {
-                let regs = self.get_registers()?;
-                Ok(CommandOutput::Data(regs.rip))
-            }
+            Command::ProgramCounter => Ok(CommandOutput::Data(
+                Registers::from_regs(self.get_registers()?).instruction_pointer,
+            )),
             Command::SetBreakpoint(a) => match a {
                 BreakpointPoint::Name(name) => {
                     debug_println!("Name: '{}'", &name);
@@ -869,13 +839,19 @@ impl Debugger {
     }
 
     fn get_pc(&self) -> Result<u64, DebugError> {
-        let regs = self.get_registers()?;
-        Ok(regs.rip)
+        Ok(Registers::from_regs(self.get_registers()?).instruction_pointer)
     }
 
     fn set_pc(&self, pc: u64) -> Result<(), DebugError> {
         let mut regs = self.get_registers()?;
-        regs.rip = pc;
+        #[cfg(target_arch = "x86_64")]
+        {
+            regs.rip = pc;
+        }
+        #[cfg(target_arch = "aarch64")]
+        {
+            regs.pc = pc;
+        }
         self.set_registers(regs)
     }
 
@@ -891,7 +867,7 @@ impl Debugger {
     }
 
     fn step_out(&mut self) -> Result<(), DebugError> {
-        let fp = self.get_registers()?.rbp;
+        let fp = Registers::from_regs(self.get_registers()?).base_pointer;
         let ra = self.read((fp + 8) as *mut c_void)?;
         let bp: Vec<_> = self
             .breakpoints
@@ -948,21 +924,6 @@ impl Debugger {
             Err(DebugError::BreakpointInvalidState)
         }
     }
-
-    fn get_registers(&self) -> Result<user_regs_struct, DebugError> {
-        match ptrace::getregs(self.child) {
-            Ok(r) => Ok(r),
-            Err(e) => Err(DebugError::NixError(e)),
-        }
-    }
-
-    fn set_registers(&self, reg: user_regs_struct) -> Result<(), DebugError> {
-        match ptrace::setregs(self.child, reg) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(DebugError::NixError(e)),
-        }
-    }
-
     pub fn waitpid(&self) -> Result<(), DebugError> {
         self.waitpid_flag(Some(WaitPidFlag::WUNTRACED))
     }
@@ -976,7 +937,7 @@ impl Debugger {
                 }
                 nix::sys::wait::WaitStatus::Signaled(pid, status, coredump) => {
                     debug_println!(
-                        "Child {} signaled with status: {} and coredump: {}",
+                        "Child {} signaled with status: {:?} and coredump: {}",
                         pid,
                         status,
                         coredump
@@ -1003,7 +964,7 @@ impl Debugger {
                             }
                         }
                         _ => {
-                            debug_println!("Child {} stopped with signal: {}", pid, signal);
+                            debug_println!("Child {} stopped with signal: {:?}", pid, signal);
                         }
                     }
                     Ok(())
@@ -1020,7 +981,7 @@ impl Debugger {
                 #[cfg(target_os = "linux")]
                 nix::sys::wait::WaitStatus::PtraceEvent(pid, signal, int) => {
                     debug_println!(
-                        "Child {} ptrace event with signal: {} and int: {}",
+                        "Child {} ptrace event with signal: {:?} and int: {}",
                         pid,
                         signal,
                         int

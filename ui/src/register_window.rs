@@ -34,14 +34,9 @@ impl DebuggerWindowImpl for RegisterWindow {
         let response = match self.registers.ready() {
             Some(registers) => match registers {
                 Ok(registers) => {
-                    register_label!(ui, "RAX", registers.rax);
-                    register_label!(ui, "RCX", registers.rcx);
-                    register_label!(ui, "RDX", registers.rdx);
-                    register_label!(ui, "RBX", registers.rbx);
-                    register_label!(ui, "RSP", registers.rsp);
-                    register_label!(ui, "RBP", registers.rbp);
-                    register_label!(ui, "RSI", registers.rsi);
-                    register_label!(ui, "RDI", registers.rdi)
+                    register_label!(ui, "Stack Pointer", registers.stack_pointer);
+                    register_label!(ui, "Base Pointer", registers.base_pointer);
+                    register_label!(ui, "Instruction Pointer", registers.instruction_pointer)
                 }
                 Err(e) => ui.label(format!("Err: {}", e)),
             },

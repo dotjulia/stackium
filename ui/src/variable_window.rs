@@ -192,10 +192,10 @@ pub fn get_byte_size(types: &DataType, index: usize) -> usize {
 }
 
 fn read_value_stack(addr: u64, registers: &Registers, rsp_offset: u64, stack: &[u8]) -> u64 {
-    if addr < registers.rsp - rsp_offset {
+    if addr < registers.stack_pointer - rsp_offset {
         return 0;
     }
-    let index = addr as usize - (registers.rsp - rsp_offset) as usize;
+    let index = addr as usize - (registers.stack_pointer - rsp_offset) as usize;
     let value = &stack[index..index + 8];
     let value = value[0] as u64
         | (value[1] as u64) << 8
@@ -259,14 +259,15 @@ fn render_variable_override(
             } => {
                 let top = get_y_from_addr(
                     rect,
-                    registers.rsp,
+                    registers.stack_pointer,
                     rsp_offset,
                     heightpad,
                     addr + *byte_size as u64 - 1,
                 ) + 2.0;
-                let bottom = get_y_from_addr(rect, registers.rsp, rsp_offset, heightpad, addr)
-                    + height
-                    - 2.0;
+                let bottom =
+                    get_y_from_addr(rect, registers.stack_pointer, rsp_offset, heightpad, addr)
+                        + height
+                        - 2.0;
                 render_var_line(
                     ui,
                     &rect,
@@ -281,12 +282,13 @@ fn render_variable_override(
             TypeName::Arr { arr_type, count } => {
                 let byte_size = get_byte_size(datatype, *arr_type);
 
-                let bottom = get_y_from_addr(rect, registers.rsp, rsp_offset, heightpad, addr)
-                    + height
-                    - 2.0;
+                let bottom =
+                    get_y_from_addr(rect, registers.stack_pointer, rsp_offset, heightpad, addr)
+                        + height
+                        - 2.0;
                 let top = get_y_from_addr(
                     rect,
-                    registers.rsp,
+                    registers.stack_pointer,
                     rsp_offset,
                     heightpad,
                     addr + byte_size as u64
@@ -332,11 +334,17 @@ fn render_variable_override(
                 }
             }
             TypeName::Ref { index } => {
-                let bottom = get_y_from_addr(rect, registers.rsp, rsp_offset, heightpad, addr)
-                    + height
-                    - 2.0;
-                let top =
-                    get_y_from_addr(rect, registers.rsp, rsp_offset, heightpad, addr + 8 - 1) + 2.0;
+                let bottom =
+                    get_y_from_addr(rect, registers.stack_pointer, rsp_offset, heightpad, addr)
+                        + height
+                        - 2.0;
+                let top = get_y_from_addr(
+                    rect,
+                    registers.stack_pointer,
+                    rsp_offset,
+                    heightpad,
+                    addr + 8 - 1,
+                ) + 2.0;
                 render_var_line(
                     ui,
                     &rect,
@@ -353,12 +361,13 @@ fn render_variable_override(
                 members,
                 byte_size,
             } => {
-                let bottom = get_y_from_addr(rect, registers.rsp, rsp_offset, heightpad, addr)
-                    + height
-                    - 2.0;
+                let bottom =
+                    get_y_from_addr(rect, registers.stack_pointer, rsp_offset, heightpad, addr)
+                        + height
+                        - 2.0;
                 let top = get_y_from_addr(
                     rect,
-                    registers.rsp,
+                    registers.stack_pointer,
                     rsp_offset,
                     heightpad,
                     addr + *byte_size as u64 - 1,
@@ -785,7 +794,7 @@ impl VariableWindow {
             let stack_start = if self.lock_stack {
                 self.lock_stack_addr
             } else {
-                registers.rbp
+                registers.base_pointer
             };
             match &self.stack {
                 Some(s) => {
@@ -819,7 +828,8 @@ impl VariableWindow {
                                                     ui.label(
                                                         RichText::new(format!(
                                                             "{:#x}",
-                                                            (registers.rsp - rsp_offset) + i as u64
+                                                            (registers.stack_pointer - rsp_offset)
+                                                                + i as u64
                                                         ))
                                                         .family(egui::FontFamily::Monospace),
                                                     );
@@ -850,7 +860,8 @@ impl VariableWindow {
                                     let vars: Vec<Variable> = vars
                                         .iter()
                                         .filter(|v| {
-                                            v.low_pc <= registers.rip && v.high_pc >= registers.rip
+                                            v.low_pc <= registers.instruction_pointer
+                                                && v.high_pc >= registers.instruction_pointer
                                         })
                                         .map(|v| v.clone())
                                         .collect();
@@ -923,19 +934,20 @@ impl VariableWindow {
                                                         let value = read_value_stack(
                                                             addr, registers, rsp_offset, &stack,
                                                         );
-                                                        if value >= registers.rsp - rsp_offset
+                                                        if value
+                                                            >= registers.stack_pointer - rsp_offset
                                                             && value <= stack_start + 16
                                                         {
                                                             let current_y = get_y_from_addr(
                                                                 &rect,
-                                                                registers.rsp,
+                                                                registers.stack_pointer,
                                                                 rsp_offset,
                                                                 heightpad,
                                                                 addr + 2,
                                                             ) - 10.0;
                                                             let dst_y = get_y_from_addr(
                                                                 &rect,
-                                                                registers.rsp,
+                                                                registers.stack_pointer,
                                                                 rsp_offset,
                                                                 heightpad,
                                                                 value,
@@ -1015,7 +1027,7 @@ impl VariableWindow {
 
                                                             let current_y = get_y_from_addr(
                                                                 &rect,
-                                                                registers.rsp,
+                                                                registers.stack_pointer,
                                                                 rsp_offset,
                                                                 heightpad,
                                                                 addr + 2,
@@ -1083,7 +1095,7 @@ impl VariableWindow {
                                                             } else {
                                                                 let current_y = get_y_from_addr(
                                                                     &rect,
-                                                                    registers.rsp,
+                                                                    registers.stack_pointer,
                                                                     rsp_offset,
                                                                     heightpad,
                                                                     addr + 2,
@@ -1104,7 +1116,7 @@ impl VariableWindow {
                                                     let size = get_byte_size(typename, 0);
                                                     let bottom = get_y_from_addr(
                                                         &rect,
-                                                        registers.rsp,
+                                                        registers.stack_pointer,
                                                         rsp_offset,
                                                         heightpad,
                                                         addr,
@@ -1112,7 +1124,7 @@ impl VariableWindow {
 
                                                     let top = get_y_from_addr(
                                                         &rect,
-                                                        registers.rsp,
+                                                        registers.stack_pointer,
                                                         rsp_offset,
                                                         heightpad,
                                                         addr + size as u64,
@@ -1178,10 +1190,10 @@ impl VariableWindow {
                                             rect.min.x + 8.0,
                                             get_y_from_addr(
                                                 &rect,
-                                                registers.rsp,
+                                                registers.stack_pointer,
                                                 rsp_offset,
                                                 heightpad,
-                                                registers.rsp,
+                                                registers.stack_pointer,
                                             ) + height / 2.0,
                                         ),
                                         Vec2::new(-15.0, 0.0),
@@ -1195,10 +1207,10 @@ impl VariableWindow {
                                             rect.min.x + 15.0,
                                             get_y_from_addr(
                                                 &rect,
-                                                registers.rsp,
+                                                registers.stack_pointer,
                                                 rsp_offset,
                                                 heightpad,
-                                                registers.rsp,
+                                                registers.stack_pointer,
                                             ) + height / 2.0,
                                         ),
                                         egui::Align2::LEFT_CENTER,
@@ -1223,12 +1235,12 @@ impl VariableWindow {
                     }
                 }
                 None => {
-                    if stack_start >= registers.rsp {
+                    if stack_start >= registers.stack_pointer {
                         self.stack = Some(dispatch_command_and_then(
                             self.backend_url.clone(),
                             Command::ReadMemory(
-                                registers.rsp - rsp_offset,
-                                (stack_start - registers.rsp) + 16 + rsp_offset,
+                                registers.stack_pointer - rsp_offset,
+                                (stack_start - registers.stack_pointer) + 16 + rsp_offset,
                             ),
                             |out| match out {
                                 CommandOutput::Memory(mem) => mem,
@@ -1270,7 +1282,7 @@ impl DebuggerWindowImpl for VariableWindow {
                     .clicked()
                 {
                     if self.lock_stack {
-                        self.lock_stack_addr = registers.rbp;
+                        self.lock_stack_addr = registers.base_pointer;
                     }
                 }
                 if self.lock_stack {
