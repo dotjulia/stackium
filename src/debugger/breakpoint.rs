@@ -90,7 +90,7 @@ impl DebuggerBreakpoint for Breakpoint {
             return Err(DebugError::BreakpointInvalidState);
         }
         #[cfg(target_arch = "x86_64")]
-        self.replace_byte(child, self.original_byte)?;
+        self.replace_byte(child, self.original_byte as u8)?;
         #[cfg(target_arch = "aarch64")]
         self.replace_4_bytes(child, self.original_byte)?;
         self.enabled = false;
