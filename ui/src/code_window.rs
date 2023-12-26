@@ -1,4 +1,4 @@
-use egui::{CollapsingHeader, ComboBox, RichText, ScrollArea};
+use egui::{CollapsingHeader, ComboBox, RichText, ScrollArea, Slider};
 use poll_promise::Promise;
 use stackium_shared::{Breakpoint, BreakpointPoint, Command, CommandOutput, Location};
 use url::Url;
@@ -22,12 +22,12 @@ pub struct CodeWindow {
     displaying_file: String,
     file: Promise<Result<String, String>>,
     breakpoints: Promise<Result<Vec<Breakpoint>, String>>,
-    code_theme: CodeTheme,
     create_breakpoint_request: Option<Promise<Result<(), String>>>,
     location: Promise<Result<Location, String>>,
     disassembly: Promise<Result<String, String>>,
     selected_window: Selected,
     pc: Promise<Result<u64, String>>,
+    code_size: f32,
 }
 
 impl CodeWindow {
@@ -38,13 +38,13 @@ impl CodeWindow {
             selected_file: String::new(),
             file: Promise::from_ready(Err(String::new())),
             displaying_file: String::new(),
-            code_theme: Default::default(),
             breakpoints: Promise::from_ready(Err(String::new())),
             create_breakpoint_request: None,
             location: Promise::from_ready(Err(String::new())),
             disassembly: dispatch!(backend_url, Command::Disassemble, File),
             selected_window: Selected::Code,
             pc: Promise::from_ready(Ok(0)),
+            code_size: 16.,
         };
         s.dirty();
         s
@@ -128,6 +128,7 @@ impl CodeWindow {
                                             },
                                             None => {}
                                         };
+                                        // ui.style_mut().
 
                                         if is_current {
                                             let (rect, _) = ui.allocate_exact_size(
@@ -146,8 +147,10 @@ impl CodeWindow {
                                                         code_view_ui(
                                                             ui,
                                                             line,
-                                                            &self.code_theme.clone(),
-                                                            "asm"
+                                                            &CodeTheme::from_style(ui.style(), self.code_size),
+
+                                                            "asm",
+                                                            self.code_size
                                                         )
                                                     },
                                                 )
@@ -157,8 +160,9 @@ impl CodeWindow {
                                             code_view_ui(
                                                 ui,
                                                 &mut line.to_owned(),
-                                                &self.code_theme,
-                                                "asm"
+                                                            &CodeTheme::from_style(ui.style(), self.code_size),
+                                                "asm",
+                                                self.code_size
                                             );
                                         }
                                     }
@@ -253,20 +257,42 @@ impl CodeWindow {
                                 None => false,
                             } {
                                 let (rect, _) = ui.allocate_exact_size(
-                                    egui::Vec2::new(6.6 * line.len() as f32, 15.),
+                                    egui::Vec2::new(
+                                        self.code_size * 0.8 * line.len() as f32,
+                                        self.code_size * 1.2,
+                                    ),
                                     egui::Sense::hover(),
                                 );
-                                ui.painter()
-                                    .rect_filled(rect, 2., egui::Color32::LIGHT_GREEN);
+                                if ui.style().visuals.dark_mode {
+                                    ui.painter()
+                                        .rect_filled(rect, 2., egui::Color32::DARK_GREEN);
+                                } else {
+                                    ui.painter()
+                                        .rect_filled(rect, 2., egui::Color32::LIGHT_GREEN);
+                                }
                                 ui.put(rect, |ui: &mut egui::Ui| {
                                     ui.with_layout(
                                         egui::Layout::left_to_right(egui::Align::Min),
-                                        |ui| code_view_ui(ui, line, &self.code_theme.clone(), "c"),
+                                        |ui| {
+                                            code_view_ui(
+                                                ui,
+                                                line,
+                                                &CodeTheme::from_style(ui.style(), self.code_size),
+                                                "c",
+                                                self.code_size,
+                                            )
+                                        },
                                     )
                                     .response
                                 });
                             } else {
-                                code_view_ui(ui, line, &self.code_theme, "c");
+                                code_view_ui(
+                                    ui,
+                                    line,
+                                    &CodeTheme::from_style(ui.style(), self.code_size),
+                                    "c",
+                                    self.code_size,
+                                );
                             }
                         });
                     });
@@ -343,6 +369,7 @@ impl DebuggerWindowImpl for CodeWindow {
                 "Disassemble",
             );
         });
+        ui.add(Slider::new(&mut self.code_size, 8.0..=32.0).text("Code size"));
         let mut dirty = false;
         if self.selected_window == Selected::Code {
             match self.files.ready() {
@@ -402,9 +429,9 @@ impl DebuggerWindowImpl for CodeWindow {
             }
         }
 
-        CollapsingHeader::new("Theme").show(ui, |ui| {
-            self.code_theme.ui(ui);
-        });
+        // CollapsingHeader::new("Theme").show(ui, |ui| {
+        // self.code_theme.ui(ui);
+        // });
         (dirty, ui.label("Code window"))
     }
 }

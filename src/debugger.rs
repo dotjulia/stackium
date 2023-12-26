@@ -963,6 +963,14 @@ impl Debugger {
                                 );
                             }
                         }
+                        nix::sys::signal::Signal::SIGSEGV => {
+                            println!("Segmentation fault!");
+
+                            match ptrace::kill(self.child) {
+                                Ok(a) => debug_println!("Killed child: {:?}", a),
+                                Err(e) => debug_println!("Failed to kill child: {:?}", e),
+                            }
+                        }
                         _ => {
                             debug_println!("Child {} stopped with signal: {:?}", pid, signal);
                         }

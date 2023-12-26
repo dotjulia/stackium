@@ -135,34 +135,49 @@ fn render_var_line(
     color: Color32,
     inline: bool,
 ) {
-    ui.painter().line_segment(
-        [
-            Pos2::new(rect.min.x + offset, bottom),
-            Pos2::new(rect.min.x + offset, top),
-        ],
-        Stroke {
-            width: if inline { 18.0 } else { 10.0 },
-            color,
-        },
-    );
-    if inline {
-        let galley = ui.painter().layout(
-            name.to_string(),
-            FontId {
-                size: 15.0,
-                family: egui::FontFamily::Monospace,
+    if bottom - top > 10f32 {
+        ui.painter().line_segment(
+            [
+                Pos2::new(rect.min.x + offset, bottom),
+                Pos2::new(rect.min.x + offset, top),
+            ],
+            Stroke {
+                width: if inline { 18.0 } else { 10.0 },
+                color,
             },
-            egui::Color32::WHITE,
-            bottom - top,
         );
-        let pos = Pos2::new(rect.min.x + offset - 8.0, bottom - 5.0);
-        ui.painter().add(egui::Shape::Text(egui::epaint::TextShape {
-            pos,
-            galley,
-            underline: egui::Stroke::NONE,
-            override_text_color: None,
-            angle: -std::f32::consts::PI / 2.0,
-        }));
+    }
+    if inline {
+        if bottom - top > 40.0 && !name.chars().next().unwrap().is_digit(10) {
+            let galley = ui.painter().layout(
+                // (bottom - top).to_string(),
+                name.to_string(),
+                FontId {
+                    size: 15.0,
+                    family: egui::FontFamily::Monospace,
+                },
+                egui::Color32::WHITE,
+                bottom - top,
+            );
+            let pos = Pos2::new(rect.min.x + offset - 8.0, bottom - 5.0);
+            ui.painter().add(egui::Shape::Text(egui::epaint::TextShape {
+                pos,
+                galley,
+                underline: egui::Stroke::NONE,
+                override_text_color: None,
+                angle: -std::f32::consts::PI / 2.0,
+            }));
+            // ui.painter().text(
+            //     Pos2::new(rect.min.x + 15.0 + offset, top + (bottom - top) / 2.0),
+            //     egui::Align2::LEFT_CENTER,
+            //     (bottom - top).to_string(),
+            //     FontId {
+            //         size: 10.0,
+            //         family: egui::FontFamily::Monospace,
+            //     },
+            //     Color32::WHITE,
+            // );
+        }
     } else {
         ui.painter().text(
             Pos2::new(rect.min.x + 15.0 + offset, top + (bottom - top) / 2.0),
@@ -476,7 +491,7 @@ fn render_heap_variable(
         sections,
         addr + get_byte_size(types, type_index) as u64 - 1,
     ) - 3.5;
-    let bottom = get_section_y(rect, sections, addr) - 1.5;
+    let bottom = get_section_y(rect, sections, addr) + 3.5; // - 1.5;
     render_var_line(
         ui,
         rect,

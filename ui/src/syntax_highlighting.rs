@@ -1,4 +1,4 @@
-use egui::{text::LayoutJob, Response};
+use egui::{text::LayoutJob, FontId, Response};
 
 /// View some code with syntax highlighting and selection.
 pub fn code_view_ui(
@@ -6,6 +6,7 @@ pub fn code_view_ui(
     mut code: &str,
     theme: &CodeTheme,
     language: &str,
+    font_size: f32,
 ) -> Response {
     let mut layouter = |ui: &egui::Ui, string: &str, _wrap_width: f32| {
         let layout_job = highlight(ui.ctx(), &theme, string, language);
@@ -15,7 +16,10 @@ pub fn code_view_ui(
 
     ui.add(
         egui::TextEdit::multiline(&mut code)
-            .font(egui::TextStyle::Monospace) // for cursor height
+            .font(FontId {
+                size: font_size,
+                family: egui::FontFamily::Monospace,
+            }) // for cursor height
             .code_editor()
             .desired_rows(1)
             .lock_focus(true)
@@ -70,16 +74,16 @@ pub struct CodeTheme {
 
 impl Default for CodeTheme {
     fn default() -> Self {
-        Self::dark()
+        Self::dark(10.0)
     }
 }
 
 impl CodeTheme {
-    pub fn from_style(style: &egui::Style) -> Self {
+    pub fn from_style(style: &egui::Style, font_size: f32) -> Self {
         if style.visuals.dark_mode {
-            Self::dark()
+            Self::dark(font_size)
         } else {
-            Self::light()
+            Self::light(font_size)
         }
     }
 
@@ -87,12 +91,12 @@ impl CodeTheme {
         if ctx.style().visuals.dark_mode {
             ctx.data_mut(|d| {
                 d.get_persisted(egui::Id::new("dark"))
-                    .unwrap_or_else(CodeTheme::dark)
+                    .unwrap_or_else(|| CodeTheme::dark(10.0))
             })
         } else {
             ctx.data_mut(|d| {
                 d.get_persisted(egui::Id::new("light"))
-                    .unwrap_or_else(CodeTheme::light)
+                    .unwrap_or_else(|| CodeTheme::light(10.0))
             })
         }
     }
@@ -107,8 +111,8 @@ impl CodeTheme {
 }
 
 impl CodeTheme {
-    pub fn dark() -> Self {
-        let font_id = egui::FontId::monospace(10.0);
+    pub fn dark(font_size: f32) -> Self {
+        let font_id = egui::FontId::monospace(font_size);
         use egui::{Color32, TextFormat};
         Self {
             dark_mode: true,
@@ -123,8 +127,8 @@ impl CodeTheme {
         }
     }
 
-    pub fn light() -> Self {
-        let font_id = egui::FontId::monospace(10.0);
+    pub fn light(font_size: f32) -> Self {
+        let font_id = egui::FontId::monospace(font_size);
         use egui::{Color32, TextFormat};
         Self {
             dark_mode: false,
@@ -171,9 +175,9 @@ impl CodeTheme {
                 });
 
                 let reset_value = if self.dark_mode {
-                    CodeTheme::dark()
+                    CodeTheme::dark(10.0)
                 } else {
-                    CodeTheme::light()
+                    CodeTheme::light(10.0)
                 };
 
                 if ui

@@ -1,6 +1,6 @@
 use egui::{FontId, Rect, Response, Sense, Stroke, Ui, Vec2};
 use poll_promise::Promise;
-use stackium_shared::{Command, CommandOutput, DataType, MemoryMap, Variable};
+use stackium_shared::{Command, CommandOutput, DataType, MemoryMap, Registers, Variable};
 use url::Url;
 
 use crate::{debugger_window::DebuggerWindowImpl, variable_window::get_byte_size};
@@ -90,6 +90,22 @@ impl<D: NodeContent> Graph<D> {
             }
         }
     }
+    pub fn rearrange_overlapping_nodes(&mut self) {
+        // rearrange nodes which are at exact same position
+        let mut node_rearranged_count = 0;
+        let mut nodes = self.nodes.clone();
+        for (_, node) in self.nodes.iter_mut().enumerate() {
+            if let Some(other_node) = nodes
+                .iter_mut()
+                .find(|n| n.id != node.id && n.x == node.x && n.y == node.y)
+            {
+                if node_rearranged_count % 2 == 0 {
+                    node.x += node.width;
+                }
+                node_rearranged_count += 1;
+            }
+        }
+    }
     pub fn arrange_place(mut self) -> Self {
         self.arrange();
         self
@@ -148,6 +164,7 @@ impl<D: NodeContent> Graph<D> {
 #[derive(Clone)]
 struct VariableNodeData {
     types: DataType,
+    name: String,
     typeid: usize,
     addr: u64,
 }
@@ -158,6 +175,7 @@ impl NodeContent for VariableNodeData {
             ui.add_space(4.0);
             ui.vertical(|ui| {
                 ui.add_space(4.0);
+                ui.label(&self.name);
                 match &self.types.0[self.typeid].1 {
                     stackium_shared::TypeName::Name { name, byte_size } => {
                         ui.label(name);
@@ -205,6 +223,7 @@ pub struct GraphWindow {
     variables: Promise<Result<Vec<Variable>, String>>,
     mapping: Promise<Result<Vec<MemoryMap>, String>>,
     additional_loaded_sections: Vec<Section>,
+    registers: Promise<Result<Registers, String>>,
 }
 
 impl GraphWindow {
@@ -215,6 +234,7 @@ impl GraphWindow {
             variables: Promise::from_ready(Err(String::new())),
             mapping: Promise::from_ready(Err(String::new())),
             additional_loaded_sections: vec![],
+            registers: Promise::from_ready(Err(String::new())),
         };
         ret.dirty();
         ret
@@ -224,15 +244,22 @@ impl GraphWindow {
 impl DebuggerWindowImpl for GraphWindow {
     fn dirty(&mut self) {
         self.additional_loaded_sections = vec![];
-        self.graph.nodes = vec![];
+        // self.graph.nodes = vec![];
         self.variables = dispatch!(self.backend_url.clone(), Command::ReadVariables, Variables);
         self.mapping = dispatch!(self.backend_url.clone(), Command::Maps, Maps);
+        self.registers = dispatch!(self.backend_url.clone(), Command::GetRegister, Registers);
     }
     fn ui(&mut self, ui: &mut egui::Ui) -> (bool, egui::Response) {
         let mut found_vars = vec![];
-        if let (Some(Ok(mapping)), Some(Ok(variables))) =
-            (self.mapping.ready(), self.variables.ready())
-        {
+        if let (Some(Ok(mapping)), Some(Ok(variables)), Some(Ok(registers))) = (
+            self.mapping.ready(),
+            self.variables.ready(),
+            self.registers.ready(),
+        ) {
+            let variables = variables
+                .iter()
+                .filter(|v| v.low_pc <= registers.rip && registers.rip <= v.high_pc)
+                .collect::<Vec<_>>();
             for variable in variables {
                 if let (Some(addr), Some(types)) = (variable.addr, &variable.type_name) {
                     found_vars.append(&mut check_variable_recursive(
@@ -242,6 +269,7 @@ impl DebuggerWindowImpl for GraphWindow {
                         addr,
                         0,
                         types.clone(),
+                        variable.name.clone().unwrap_or(String::new()),
                         false,
                     ));
                 }
@@ -256,11 +284,11 @@ impl DebuggerWindowImpl for GraphWindow {
 }
 
 fn push_variables(
-    vars: &Vec<(u64, Vec<Edge>, usize, DataType)>,
+    vars: &Vec<(u64, String, Vec<Edge>, usize, DataType)>,
     graph: &mut Graph<VariableNodeData>,
 ) {
     let mut did_add = false;
-    for (addr, refs, typeid, types) in vars {
+    for (addr, name, refs, typeid, types) in vars {
         if let Some(node) = graph
             .nodes
             .iter_mut()
@@ -273,15 +301,17 @@ fn push_variables(
                 *addr as usize,
                 refs.clone(),
                 VariableNodeData {
+                    name: name.clone(),
                     types: types.clone(),
                     typeid: *typeid,
                     addr: *addr,
                 },
             ));
+            graph.rearrange_overlapping_nodes();
         }
     }
     if did_add {
-        graph.arrange();
+        // graph.arrange();
     }
 }
 
@@ -307,8 +337,9 @@ fn check_variable_recursive(
     addr: u64,
     type_index: usize,
     types: DataType,
+    name: String,
     search_mode: bool,
-) -> Vec<(u64, Vec<Edge>, usize, DataType)> {
+) -> Vec<(u64, String, Vec<Edge>, usize, DataType)> {
     let size = get_byte_size(&types, type_index);
     if let Some(section) = sections
         .iter()
@@ -321,7 +352,7 @@ fn check_variable_recursive(
                     byte_size: _,
                 } => {
                     if !search_mode {
-                        return vec![(addr, vec![], type_index, types.clone())];
+                        return vec![(addr, name, vec![], type_index, types.clone())];
                     } else {
                         return vec![];
                     }
@@ -337,6 +368,7 @@ fn check_variable_recursive(
                             addr + get_byte_size(&types, *arr_type) as u64 * i as u64,
                             *arr_type,
                             types.clone(),
+                            format!("{}[{}]", name, i),
                             true,
                         );
                         if let Some(first) = a.iter().last() {
@@ -348,7 +380,7 @@ fn check_variable_recursive(
                         ret_val.append(&mut a);
                     }
                     if !search_mode {
-                        ret_val.push((addr, refs, type_index, types.clone()));
+                        ret_val.push((addr, name, refs, type_index, types.clone()));
                     }
                     return ret_val;
                 }
@@ -358,6 +390,7 @@ fn check_variable_recursive(
                     if !search_mode {
                         ret_val.push((
                             addr,
+                            name.clone(),
                             vec![Edge {
                                 connection: value as usize,
                                 label: String::new(),
@@ -374,19 +407,20 @@ fn check_variable_recursive(
                             value,
                             *index,
                             types,
+                            format!("*{}", name),
                             false,
                         ));
                     }
                     return ret_val;
                 }
                 stackium_shared::TypeName::ProductType {
-                    name,
+                    name: structname,
                     members,
                     byte_size,
                 } => {
                     let mut ret_val = vec![];
                     let mut refs = vec![];
-                    for (name, prod_type_offset, offset) in members.iter() {
+                    for (fieldname, prod_type_offset, offset) in members.iter() {
                         let mut a = check_variable_recursive(
                             mapping,
                             sections,
@@ -394,18 +428,19 @@ fn check_variable_recursive(
                             addr + *offset as u64,
                             *prod_type_offset,
                             types.clone(),
+                            format!("{}.{}", name, fieldname),
                             true,
                         );
                         if let Some(first) = a.iter().last() {
                             refs.push(Edge {
                                 connection: first.0 as usize,
-                                label: name.clone(),
+                                label: fieldname.clone(),
                             });
                         }
                         ret_val.append(&mut a);
                     }
                     if !search_mode {
-                        ret_val.push((addr, refs, type_index, types.clone()));
+                        ret_val.push((addr, name, refs, type_index, types.clone()));
                     }
                     return ret_val;
                 }

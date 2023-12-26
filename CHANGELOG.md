@@ -1,1 +1,1 @@
-* remove step in/step over button
+* code window highlight readability

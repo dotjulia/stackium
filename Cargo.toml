@@ -1,7 +1,7 @@
 [package]
 name = "stackium"
 author = "Julia Herbsthofer"
-version = "0.1.19"
+version = "0.1.25"
 edition = "2021"
 rust-version = "1.71.1"
 license = "MIT"
@@ -11,7 +11,7 @@ license = "MIT"
 [features]
 default = ["web", "gui"]
 web = []
-gui = ["stackium_ui"]
+gui = ["dep:stackium_ui"]
 
 #[target.'cfg(target_arch = "aarch64")'.dependencies]
 #nix = { git = "https://github.com/hack3ric/nix.git", features = [
