@@ -12,6 +12,7 @@ use crate::{
     graph_window::GraphWindow,
     location::LocationWindow,
     map_window::MapWindow,
+    memory_window::MemoryWindow,
     register_window::RegisterWindow,
     settings_window::SettingsWindow,
     toggle::toggle_ui,
@@ -85,7 +86,7 @@ impl StackiumApp {
                     DebuggerWindow {
                         title: "Memory",
                         is_active: false,
-                        body: Box::from(VariableWindow::new(backend_url.clone())),
+                        body: Box::from(MemoryWindow::new(backend_url.clone())),
                     },
                     DebuggerWindow {
                         title: "Graph",

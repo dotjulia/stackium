@@ -29,6 +29,7 @@ use crate::debugger::Debugger;
 mod debugger;
 mod prompt;
 mod util;
+mod variables;
 #[cfg(feature = "web")]
 mod web;
 
