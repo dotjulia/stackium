@@ -21,6 +21,9 @@ gui = ["dep:stackium_ui"]
 #    "fs",
 #] }
 
+[profile.release]
+strip = true
+
 [target.'cfg(not(target_arch = "aarch64"))'.dependencies]
 nix = { version = "0.27.1", features = ["default", "personality", "ptrace", "fs"] }
 
