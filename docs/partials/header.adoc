@@ -20,7 +20,7 @@
 image::stackiumlogo.png[Logo, 200, 200]
 
 
-image:https://img.shields.io/badge/rustc-%5E1.71.1-orange.svg[] image:https://github.com/dotjulia/stackium/actions/workflows/main.yml/badge.svg[] image:https://img.shields.io/github/issues/dotjulia/stackium[Issues,link=https://github.com/dotjulia/stackium/issues] image:https://img.shields.io/github/v/tag/dotjulia/stackium?label=version[Version,link=https://github.com/dotjulia/stackium/releases/latest] image:https://shields.io/github/downloads-pre/dotjulia/stackium/latest/total?label=Release%20Artifacts[Download,link=https://github.com/dotjulia/stackium/releases/latest] image:https://img.shields.io/badge/Download-Latest-blue[Download,link=https://github.com/dotjulia/stackium/releases/latest]
+image:https://img.shields.io/badge/rustc-%5E1.71.1-orange.svg[] image:https://img.shields.io/github/downloads/dotjulia/stackium/total.svg[] image:https://github.com/dotjulia/stackium/actions/workflows/main.yml/badge.svg[] image:https://img.shields.io/github/issues/dotjulia/stackium[Issues,link=https://github.com/dotjulia/stackium/issues] image:https://img.shields.io/github/v/tag/dotjulia/stackium?label=version[Version,link=https://github.com/dotjulia/stackium/releases/latest] image:https://shields.io/github/downloads-pre/dotjulia/stackium/latest/total?label=Release%20Artifacts[Download,link=https://github.com/dotjulia/stackium/releases/latest] image:https://img.shields.io/badge/Download-Latest-blue[Download,link=https://github.com/dotjulia/stackium/releases/latest]
 
 [[navigation]]
 --

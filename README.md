@@ -5,6 +5,7 @@
 </p>
 <p align="center">
  <img alt="Rust Version: ^1.71.1" src="https://img.shields.io/badge/rustc-%5E1.71.1-orange.svg">
+ <img alt="Rust Version: ^1.71.1" src="https://img.shields.io/github/downloads/dotjulia/stackium/total.svg">
 <a href="https://github.com/dotjulia/stackium/actions/workflows/main.yml"><img alt="Release" src="https://github.com/dotjulia/stackium/actions/workflows/main.yml/badge.svg"></a>
 
 <img alt="Version" src="https://img.shields.io/github/v/tag/dotjulia/stackium?label=latest">
@@ -12,7 +13,7 @@
 
 ## Stackium
 
-A debugger for students to learn pointer and memory layout more intuitively
+A debugger for students to learn pointer and memory layout more intuitively [Tutorial/Docs](https://stack.juli.zip/)
 
 
 ### Running the debugger
