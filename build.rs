@@ -14,7 +14,33 @@ fn main() -> Result<(), ()> {
     }
     let base_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     // return Ok(());
-    match Command::new("trunk")
+    #[cfg(all(not(debug_assertions), target_arch = "aarch64"))]
+    return match Command::new("trunk")
+        .current_dir(format!("{}/ui", base_dir))
+        .arg("build")
+        // .arg("--release")
+        .output()
+    {
+        Ok(output) => {
+            if output.status.success() {
+                Ok(())
+            } else {
+                println!(
+                    "cargo:warning=❌ Trunk failed: {}\ncargo:warning={}",
+                    std::str::from_utf8(&output.stdout).unwrap(),
+                    std::str::from_utf8(&output.stderr).unwrap()
+                );
+                Err(())
+            }
+        }
+        Err(e) => {
+            println!("cargo:warning=❌ Failed to run trunk: {} ", e);
+            println!("cargo:warning=❗ install trunk using \x1b[1mcargo install trunk\x1b[0m");
+            Err(())
+        }
+    };
+    #[cfg(not(debug_assertions))]
+    return match Command::new("trunk")
         .current_dir(format!("{}/ui", base_dir))
         .arg("build")
         .arg("--release")
@@ -37,5 +63,7 @@ fn main() -> Result<(), ()> {
             println!("cargo:warning=❗ install trunk using \x1b[1mcargo install trunk\x1b[0m");
             Err(())
         }
-    }
+    };
+    #[cfg(debug_assertions)]
+    Ok(())
 }

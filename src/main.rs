@@ -38,7 +38,7 @@ enum DebugInterfaceMode {
     CLI,
     #[cfg(feature = "web")]
     Web,
-    #[cfg(feature = "web")]
+    #[cfg(feature = "gui")]
     Gui,
 }
 
@@ -107,7 +107,7 @@ fn main() -> Result<(), DebugError> {
         DebugInterfaceMode::CLI => debugger.debug_loop(),
         #[cfg(feature = "web")]
         DebugInterfaceMode::Web => start_webserver(debugger),
-        #[cfg(feature = "web")]
+        #[cfg(feature = "gui")]
         DebugInterfaceMode::Gui => match unsafe { fork() } {
             Ok(fr) => match fr {
                 Parent { child: _ } => start_webserver(debugger),
