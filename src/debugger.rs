@@ -818,13 +818,13 @@ impl Debugger {
         }
     }
 
-    #[allow(dead_code)]
-    fn write(&self, addr: *mut c_void, data: u64) -> Result<(), DebugError> {
-        match unsafe { ptrace::write(self.child, addr, data as *mut _) } {
-            Ok(_) => Ok(()),
-            Err(e) => Err(DebugError::NixError(e)),
-        }
-    }
+    // #[allow(dead_code)]
+    // fn write(&self, addr: *mut c_void, data: u64) -> Result<(), DebugError> {
+    //     match unsafe { ptrace::write(self.child, addr, data as *mut _) } {
+    //         Ok(_) => Ok(()),
+    //         Err(e) => Err(DebugError::NixError(e)),
+    //     }
+    // }
 
     pub fn read(&self, addr: *mut c_void) -> Result<u64, DebugError> {
         match ptrace::read(self.child, addr) {
@@ -833,7 +833,7 @@ impl Debugger {
         }
     }
 
-    fn read_memory(&self, addr: u64, len: u64) -> Result<Vec<u8>, DebugError> {
+    pub fn read_memory(&self, addr: u64, len: u64) -> Result<Vec<u8>, DebugError> {
         let mut values = vec![];
         debug_println!("Reading @ {:#x} : {}", addr, len);
         for i in 0..len {

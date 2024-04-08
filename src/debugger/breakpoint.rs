@@ -38,6 +38,7 @@ impl DebuggerBreakpoint for Breakpoint {
         })
     }
 
+    #[cfg(target_arch = "x86_64")]
     fn replace_byte(&self, child: Pid, byte: u8) -> Result<(), DebugError> {
         let orig_data: u64 = match ptrace::read(child, self.address as *mut _) {
             Ok(b) => b as u64,
@@ -55,6 +56,25 @@ impl DebuggerBreakpoint for Breakpoint {
         }
     }
 
+    #[cfg(target_arch = "aarch64")]
+    fn replace_byte(&self, child: Pid, byte: u8) -> Result<(), DebugError> {
+        let orig_data: u64 = match ptrace::read(child, self.address as *mut _) {
+            Ok(b) => b as u64,
+            Err(e) => return Err(DebugError::NixError(e)),
+        };
+        match unsafe {
+            ptrace::write(
+                child,
+                self.address as *mut _,
+                ((byte as u64) | (orig_data & !(0xff as u64))) as i64,
+            )
+        } {
+            Ok(_) => Ok(()),
+            Err(e) => Err(DebugError::NixError(e)),
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
     fn replace_4_bytes(&self, child: Pid, bytes: u32) -> Result<(), DebugError> {
         let orig_data: u64 = match ptrace::read(child, self.address as *mut _) {
             Ok(b) => b as u64,
@@ -65,6 +85,24 @@ impl DebuggerBreakpoint for Breakpoint {
                 child,
                 self.address as *mut _,
                 ((bytes as u64) | (orig_data & !(0xffffffff as u64))) as *mut c_void,
+            )
+        } {
+            Ok(_) => Ok(()),
+            Err(e) => Err(DebugError::NixError(e)),
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    fn replace_4_bytes(&self, child: Pid, bytes: u32) -> Result<(), DebugError> {
+        let orig_data: u64 = match ptrace::read(child, self.address as *mut _) {
+            Ok(b) => b as u64,
+            Err(e) => return Err(DebugError::NixError(e)),
+        };
+        match unsafe {
+            ptrace::write(
+                child,
+                self.address as *mut _,
+                ((bytes as u64) | (orig_data & !(0xffffffff as u64))) as i64,
             )
         } {
             Ok(_) => Ok(()),

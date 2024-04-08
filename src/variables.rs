@@ -1,6 +1,6 @@
 use std::os::raw::c_void;
 
-use stackium_shared::{DataType, DiscoveredVariable, MemoryMap, TypeName, Variable};
+use stackium_shared::{DataType, DiscoveredVariable, MemoryMap, TypeName, Variable, VARIABLE_MEM_PADDING};
 
 use crate::debugger::{error::DebugError, Debugger};
 pub fn get_byte_size(types: &DataType, index: usize) -> usize {
@@ -48,6 +48,7 @@ fn check_variable_recursive(
                         line: original_var.line.clone(),
                         high_pc: original_var.high_pc,
                         low_pc: original_var.low_pc,
+                        memory: None,
                     }];
                 } else {
                     return vec![];
@@ -78,6 +79,7 @@ fn check_variable_recursive(
                         line: original_var.line.clone(),
                         high_pc: original_var.high_pc,
                         low_pc: original_var.low_pc,
+                        memory: None,
                     });
                 }
                 return ret_val;
@@ -107,6 +109,7 @@ fn check_variable_recursive(
                             line: original_var.line.clone(),
                             high_pc: original_var.high_pc,
                             low_pc: original_var.low_pc,
+                            memory: None,
                         });
                     }
                     if let Some(index) = index {
@@ -176,6 +179,7 @@ fn check_variable_recursive(
                         line: original_var.line.clone(),
                         high_pc: original_var.high_pc,
                         low_pc: original_var.low_pc,
+                        memory: None,
                     });
                 }
                 return ret_val;
@@ -203,6 +207,7 @@ impl Debugger {
                     line: scope_variable.line.clone(),
                     high_pc: scope_variable.high_pc,
                     low_pc: scope_variable.low_pc,
+                    memory: None,
                 },
                 scope_variable.addr.unwrap(),
                 0,
@@ -211,6 +216,9 @@ impl Debugger {
                 false,
             );
             variables.append(&mut scope_variables);
+        }
+        for variable in &mut variables {
+            variable.memory = self.read_memory(variable.addr.unwrap() - VARIABLE_MEM_PADDING, get_byte_size(&variable.types, variable.type_index) as u64 + VARIABLE_MEM_PADDING * 2).ok();
         }
         Ok(variables)
     }

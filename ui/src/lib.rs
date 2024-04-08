@@ -18,6 +18,7 @@ mod syntax_highlighting;
 mod toggle;
 mod variable_window;
 pub use app::StackiumApp;
+mod rotated_plot_text;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn start_ui() -> eframe::Result<()> {

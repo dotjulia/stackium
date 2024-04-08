@@ -166,6 +166,8 @@ fn render_var_line(
                 underline: egui::Stroke::NONE,
                 override_text_color: None,
                 angle: -std::f32::consts::PI / 2.0,
+                fallback_color: Color32::BLACK,
+                opacity_factor: 1.0,
             }));
             // ui.painter().text(
             //     Pos2::new(rect.min.x + 15.0 + offset, top + (bottom - top) / 2.0),

@@ -1,4 +1,4 @@
-use egui::{Align, Layout, TextureHandle};
+use egui::{load::SizedTexture, Align, Layout, TextureHandle};
 use poll_promise::Promise;
 use stackium_shared::{Command, CommandOutput, DebugMeta};
 use url::Url;
@@ -147,7 +147,7 @@ impl eframe::App for StackiumApp {
                 // #[cfg(not(target_arch = "wasm32"))] // no File->Quit on web pages!
                 ui.menu_button("File", |ui| {
                     if ui.button("Quit").clicked() {
-                        frame.close();
+                        // frame.
                     }
                 });
 
@@ -184,7 +184,7 @@ impl eframe::App for StackiumApp {
 
                     ui.with_layout(Layout::top_down(Align::Center), |ui| {
                         ui.add_space(10.);
-                        ui.image(&mut texture.clone(), egui::Vec2::new(100., 100.));
+                        ui.image(SizedTexture::new(&mut texture.clone(), egui::Vec2::new(100., 100.)));
                         ui.heading("Stackium");
                         ui.add_space(20.);
                     });
@@ -206,7 +206,7 @@ impl eframe::App for StackiumApp {
                     }
                     ui.with_layout(Layout::bottom_up(Align::LEFT), |ui| {
                         ui.horizontal(|ui| {
-                            ui.image(texture, egui::Vec2::new(20., 20.));
+                            ui.image(SizedTexture::new(texture, egui::Vec2::new(20., 20.)));
                             ui.hyperlink_to(
                                 format!("Stackium {}", egui::special_emojis::GITHUB),
                                 "https://github.com/dotjulia/stackium",

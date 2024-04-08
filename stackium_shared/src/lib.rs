@@ -45,6 +45,7 @@ pub enum CommandOutput {
     None,
 }
 
+// (internal offset, type)
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, Clone)]
 pub struct DataType(pub Vec<(usize, TypeName)>);
 
@@ -140,6 +141,8 @@ pub struct Variable {
     pub low_pc: u64,
 }
 
+pub const VARIABLE_MEM_PADDING: u64 = 30;
+
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, Clone)]
 pub struct DiscoveredVariable {
     pub name: Option<String>,
@@ -148,6 +151,7 @@ pub struct DiscoveredVariable {
     pub file: Option<String>,
     pub line: Option<u64>,
     pub addr: Option<u64>,
+    pub memory: Option<Vec<u8>>,
     pub high_pc: u64,
     pub low_pc: u64,
 }

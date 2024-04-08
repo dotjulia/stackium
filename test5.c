@@ -8,10 +8,11 @@ struct Node {
 
 int main() {
   // struct Node n1;
-  struct Node* n1 = malloc(sizeof(struct Node));
-  n1->next_ = malloc(sizeof(struct Node));
-  n1->next_->next_ = malloc(sizeof(struct Node));
-  n1->next_->next_->next_ = malloc(sizeof(struct Node));  // printf("Test");
+  struct Node* n1[] = {malloc(sizeof(struct Node)), NULL};
+  n1[0]->next_ = malloc(sizeof(struct Node));
+  n1[1] = n1[0]->next_;
+  n1[0]->next_->next_ = malloc(sizeof(struct Node));
+  n1[0]->next_->next_->next_ = malloc(sizeof(struct Node));  // printf("Test");
   // printf("Test");
   // printf("Test");
   // printf("Test");
