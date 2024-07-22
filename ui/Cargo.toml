@@ -11,6 +11,7 @@ rust-version = "1.65"
 [dependencies]
 stackium_shared = { path = "../stackium_shared" }
 egui = "0.27.2"
+egui_dock = "0.13"
 eframe = { version = "0.27.2", default-features = false, features = [
     #"accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
     "default_fonts", # Embed the default egui fonts.

@@ -1,6 +1,8 @@
 use std::os::raw::c_void;
 
-use stackium_shared::{DataType, DiscoveredVariable, MemoryMap, TypeName, Variable, VARIABLE_MEM_PADDING};
+use stackium_shared::{
+    DataType, DiscoveredVariable, MemoryMap, TypeName, Variable, VARIABLE_MEM_PADDING,
+};
 
 use crate::debugger::{error::DebugError, Debugger};
 pub fn get_byte_size(types: &DataType, index: usize) -> usize {
@@ -28,9 +30,11 @@ fn check_variable_recursive(
     search_mode: bool,
 ) -> Vec<DiscoveredVariable> {
     let size = get_byte_size(&types, type_index);
-    if mapping
-        .iter()
-        .any(|m| m.from <= addr && addr + size as u64 <= m.to)
+    println!("Addr: {:x?} Size: {}", addr, size);
+    if addr.checked_add(size as u64).is_some()
+        && mapping
+            .iter()
+            .any(|m| m.from <= addr && addr + size as u64 <= m.to)
     {
         match &types.0[type_index].1 {
             stackium_shared::TypeName::Name {
@@ -218,7 +222,13 @@ impl Debugger {
             variables.append(&mut scope_variables);
         }
         for variable in &mut variables {
-            variable.memory = self.read_memory(variable.addr.unwrap() - VARIABLE_MEM_PADDING, get_byte_size(&variable.types, variable.type_index) as u64 + VARIABLE_MEM_PADDING * 2).ok();
+            variable.memory = self
+                .read_memory(
+                    variable.addr.unwrap() - VARIABLE_MEM_PADDING,
+                    get_byte_size(&variable.types, variable.type_index) as u64
+                        + VARIABLE_MEM_PADDING * 2,
+                )
+                .ok();
         }
         Ok(variables)
     }

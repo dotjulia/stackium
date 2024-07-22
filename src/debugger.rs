@@ -224,11 +224,11 @@ impl Debugger {
                             gimli::DW_TAG_pointer_type => {
                                 if let Ok(Some(type_field)) = node.entry().attr(gimli::DW_AT_type) {
                                     //TODO: Find fix for recursive types
-                                    debug_println!(
-                                        "Resolving pointer for type {:?}",
-                                        unit_offset(type_field.value())
-                                    );
-                                    debug_println!("Known types: {:?}", known_types);
+                                    // debug_println!(
+                                    //     "Resolving pointer for type {:?}",
+                                    //     unit_offset(type_field.value())
+                                    // );
+                                    // debug_println!("Known types: {:?}", known_types);
                                     let index = known_types.0.iter().position(|e| {
                                         e.0 == unit_offset(type_field.value()).unwrap()
                                     });
@@ -835,7 +835,7 @@ impl Debugger {
 
     pub fn read_memory(&self, addr: u64, len: u64) -> Result<Vec<u8>, DebugError> {
         let mut values = vec![];
-        debug_println!("Reading @ {:#x} : {}", addr, len);
+        // debug_println!("Reading @ {:#x} : {}", addr, len);
         for i in 0..len {
             let v = ptrace::read(self.child, (addr + i as u64) as *mut c_void)?;
             values.push((v & 0xFF) as u8);
