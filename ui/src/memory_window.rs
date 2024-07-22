@@ -19,6 +19,7 @@ pub struct MemoryWindow {
     variables: Promise<Result<Vec<DiscoveredVariable>, String>>,
     registers: Promise<Result<Registers, String>>,
     grid: bool,
+    coordinates: bool,
     cached_addresses: Option<Vec<u64>>,
 }
 
@@ -29,6 +30,7 @@ impl MemoryWindow {
             variables: Promise::from_ready(Err(String::new())),
             registers: Promise::from_ready(Err(String::new())),
             grid: false,
+            coordinates: false,
             cached_addresses: None,
         };
         ret.dirty();
@@ -401,8 +403,11 @@ impl DebuggerWindowImpl for MemoryWindow {
         self.registers = dispatch!(self.backend_url.clone(), Command::GetRegister, Registers);
         self.cached_addresses = None;
     }
-    fn ui(&mut self, ui: &mut egui::Ui) -> (bool, egui::Response) {
-        ui.checkbox(&mut self.grid, "show grid");
+    fn ui(&mut self, ui: &mut egui::Ui) -> bool {
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut self.grid, "Show Grid");
+            ui.checkbox(&mut self.coordinates, "Show Coordinates");
+        });
         if let (Some(Ok(variables)), Some(Ok(registers))) =
             (self.variables.ready(), self.registers.ready())
         {
@@ -431,11 +436,13 @@ impl DebuggerWindowImpl for MemoryWindow {
             }
             let mut arrow_counter = 0;
             Plot::new("Memory")
-                .height(600f32)
+                // .height(600f32)
                 .show_axes([false, false])
                 .show_grid(Vec2b::new(self.grid, self.grid))
                 .data_aspect(1.0)
                 .auto_bounds(Vec2b::new(true, true))
+                .show_x(self.coordinates)
+                .show_y(self.coordinates)
                 // .allow_zoom(false)
                 .show(ui, |ui| {
                     render_addresses(ui, &stack_range, self.cached_addresses.as_ref().unwrap());
@@ -453,6 +460,6 @@ impl DebuggerWindowImpl for MemoryWindow {
         } else {
             ui.spinner();
         }
-        (false, ui.label("test"))
+        false
     }
 }

@@ -1282,7 +1282,7 @@ impl DebuggerWindowImpl for VariableWindow {
         self.mapping = dispatch!(self.backend_url.clone(), Command::Maps, Maps);
         self.stack = None
     }
-    fn ui(&mut self, ui: &mut egui::Ui) -> (bool, egui::Response) {
+    fn ui(&mut self, ui: &mut egui::Ui) -> bool {
         // ui.horizontal(|ui| {
         // ui.selectable_value(
         //     &mut self.active_tab,
@@ -1321,6 +1321,6 @@ impl DebuggerWindowImpl for VariableWindow {
             ActiveTab::VariableList => self.render_variable_list(ui),
             ActiveTab::StackView => self.render_stack(ui),
         };
-        (false, res)
+        false
     }
 }

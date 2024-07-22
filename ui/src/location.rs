@@ -17,8 +17,8 @@ impl LocationWindow {
 }
 
 impl DebuggerWindowImpl for LocationWindow {
-    fn ui(&mut self, ui: &mut egui::Ui) -> (bool, egui::Response) {
-        let ret = match self.location.ready() {
+    fn ui(&mut self, ui: &mut egui::Ui) -> bool {
+        match self.location.ready() {
             Some(location) => match location {
                 Ok(location) => {
                     ui.label(format!("Current file: {}", location.file));
@@ -35,6 +35,6 @@ impl DebuggerWindowImpl for LocationWindow {
             },
             None => ui.spinner(),
         };
-        (false, ret)
+        false
     }
 }

@@ -1,17 +1,18 @@
 use gimli::{EvaluationResult, Reader};
+use nix::unistd::ForkResult::{Child, Parent};
 use nix::{
     sys::{
         ptrace,
         wait::{waitpid, WaitPidFlag},
     },
-    unistd::Pid,
+    unistd::{fork, Pid},
 };
 use object::{Object, ObjectSection};
 use stackium_shared::{
     Breakpoint, BreakpointPoint, Command, CommandOutput, DataType, DebugMeta, DwarfAttribute,
     FunctionMeta, Location, MemoryMap, Registers, TypeName, Variable,
 };
-use std::{ffi::c_void, fs, path::PathBuf, rc::Rc, sync::Arc};
+use std::{ffi::c_void, fs, path::PathBuf, sync::Arc};
 
 pub mod breakpoint;
 pub mod error;
@@ -681,6 +682,42 @@ impl Debugger {
     pub fn process_command(&mut self, command: Command) -> Result<CommandOutput, DebugError> {
         match command {
             Command::Maps => Ok(CommandOutput::Maps(self.get_maps()?)),
+            Command::RestartDebugee => {
+                // Disable breakpoints so we can enable the same breakpoints in the new process
+                for breakpoint in self.breakpoints.iter_mut() {
+                    match breakpoint.disable(self.child) {
+                        Ok(_) => (),
+                        Err(e) => {
+                            // Debuggee may already be dead, restarting should still work
+                            // manually disable the breakpoint so we can re-enable it
+                            breakpoint.enabled = false;
+                            println!("Assuming child is already dead, disabling breakpoint manually: {:?}", e);
+                        }
+                    }
+                }
+                match ptrace::kill(self.child) {
+                    Ok(a) => debug_println!("Killed child: {:?}", a),
+                    Err(e) => debug_println!("Failed to kill child: {:?}", e),
+                };
+                match unsafe { fork() } {
+                    Ok(fr) => match fr {
+                        Child => {
+                            crate::debuggee_init(self.program.clone()).unwrap();
+                            unreachable!();
+                        }
+                        Parent { child } => {
+                            self.child = child;
+                            self.waitpid()?;
+                            // Enable breakpoints in the new process
+                            for breakpoint in self.breakpoints.iter_mut() {
+                                breakpoint.enable(self.child)?;
+                            }
+                            Ok(CommandOutput::None)
+                        }
+                    },
+                    Err(e) => Err(DebugError::NixError(e)),
+                }
+            }
             Command::Disassemble => Ok(CommandOutput::File(
                 std::str::from_utf8(
                     &std::process::Command::new("objdump")

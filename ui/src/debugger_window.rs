@@ -11,7 +11,7 @@ pub struct DebuggerWindow {
 pub trait DebuggerWindowImpl {
     /// The bool in the return value indicates whether the
     /// widget changed the debug state significantly
-    fn ui(&mut self, ui: &mut egui::Ui) -> (bool, egui::Response);
+    fn ui(&mut self, ui: &mut egui::Ui) -> bool;
     fn dirty(&mut self) {}
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {}
 }
@@ -29,7 +29,7 @@ impl Metadata {
 }
 
 impl DebuggerWindowImpl for Metadata {
-    fn ui(&mut self, ui: &mut egui::Ui) -> (bool, egui::Response) {
+    fn ui(&mut self, ui: &mut egui::Ui) -> bool {
         match self.metadata.ready() {
             Some(metadata) => match metadata {
                 Ok(metadata) => {
@@ -39,11 +39,18 @@ impl DebuggerWindowImpl for Metadata {
                     metadata.files.iter().for_each(|file| {
                         ui.label(file);
                     });
-                    (false, ui.label(format!("{} variables", metadata.vars)))
+                    ui.label(format!("{} variables", metadata.vars));
+                    false
                 }
-                Err(message) => (false, ui.label("Error")),
+                Err(message) => {
+                    ui.label("Error");
+                    false
+                }
             },
-            None => (false, ui.spinner()),
+            None => {
+                ui.spinner();
+                false
+            }
         }
     }
 }

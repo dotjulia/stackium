@@ -22,9 +22,9 @@ impl ControlWindow {
 }
 
 impl DebuggerWindowImpl for ControlWindow {
-    fn ui(&mut self, ui: &mut egui::Ui) -> (bool, egui::Response) {
+    fn ui(&mut self, ui: &mut egui::Ui) -> bool {
         let mut dirty = false;
-        let response = match &self.promise {
+        match &self.promise {
             Some(promise) => match promise.ready() {
                 Some(result) => match result {
                     Ok(_) => {
@@ -78,6 +78,6 @@ impl DebuggerWindowImpl for ControlWindow {
         if let Some(warning) = &self.warning {
             ui.label(RichText::new(format!("⚠ {}", warning)).color(ui.visuals().warn_fg_color));
         }
-        (dirty, response)
+        dirty
     }
 }

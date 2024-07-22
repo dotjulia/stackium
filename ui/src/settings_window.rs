@@ -34,7 +34,7 @@ impl DebuggerWindowImpl for SettingsWindow {
             }
         }
     }
-    fn ui(&mut self, ui: &mut egui::Ui) -> (bool, egui::Response) {
+    fn ui(&mut self, ui: &mut egui::Ui) -> bool {
         ui.collapsing("Debug Info", |ui| {
             ui.horizontal(|ui| {
                 let run_mode = &mut self.run_mode;
@@ -62,6 +62,6 @@ impl DebuggerWindowImpl for SettingsWindow {
         ui.separator();
         let ctx = ui.ctx().clone();
         ctx.settings_ui(ui);
-        (false, ui.separator())
+        false
     }
 }

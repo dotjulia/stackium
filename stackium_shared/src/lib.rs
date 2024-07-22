@@ -239,6 +239,8 @@ pub enum Command {
     /// Discovers variables, returns all variables from ReadVariables and additionally variables on
     /// the heap
     DiscoverVariables,
+    /// Restarts the process being debugged
+    RestartDebugee,
     /// Set a breakpoints at the specified location
     SetBreakpoint(BreakpointPoint),
     /// Retrieve all current breakpoints

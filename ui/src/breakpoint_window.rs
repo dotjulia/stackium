@@ -51,7 +51,7 @@ impl DebuggerWindowImpl for BreakpointWindow {
         );
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui) -> (bool, egui::Response) {
+    fn ui(&mut self, ui: &mut egui::Ui) -> bool {
         let mut is_dirty = false;
         match self.breakpoints.ready() {
             Some(breakpoints) => match breakpoints {
@@ -168,15 +168,13 @@ impl DebuggerWindowImpl for BreakpointWindow {
             }
             Selection::Function => {}
         };
-        let ret = if let Some(warning) = &self.warning {
+        if let Some(warning) = &self.warning {
             ui.label(
                 RichText::new(format!("⚠ {}", warning))
                     .small()
                     .color(ui.visuals().warn_fg_color),
-            )
-        } else {
-            ui.label("")
-        };
-        (is_dirty, ret)
+            );
+        }
+        is_dirty
     }
 }

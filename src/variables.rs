@@ -30,7 +30,7 @@ fn check_variable_recursive(
     search_mode: bool,
 ) -> Vec<DiscoveredVariable> {
     let size = get_byte_size(&types, type_index);
-    println!("Addr: {:x?} Size: {}", addr, size);
+    // println!("Addr: {:x?} Size: {}", addr, size);
     if addr.checked_add(size as u64).is_some()
         && mapping
             .iter()
