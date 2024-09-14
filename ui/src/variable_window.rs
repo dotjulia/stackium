@@ -166,6 +166,8 @@ fn render_var_line(
                 underline: egui::Stroke::NONE,
                 override_text_color: None,
                 angle: -std::f32::consts::PI / 2.0,
+                fallback_color: Color32::BLACK,
+                opacity_factor: 1.0,
             }));
             // ui.painter().text(
             //     Pos2::new(rect.min.x + 15.0 + offset, top + (bottom - top) / 2.0),
@@ -815,7 +817,7 @@ impl VariableWindow {
                 Some(s) => {
                     if let Some(Ok(stack)) = s.ready() {
                         //TODO: find a solution for the window height
-                        ScrollArea::vertical().max_height(900.0).show(ui, |ui| {
+                        ScrollArea::vertical().max_height(700.0).show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 let height = 15.0;
                                 egui_extras::TableBuilder::new(ui)
@@ -1280,7 +1282,7 @@ impl DebuggerWindowImpl for VariableWindow {
         self.mapping = dispatch!(self.backend_url.clone(), Command::Maps, Maps);
         self.stack = None
     }
-    fn ui(&mut self, ui: &mut egui::Ui) -> (bool, egui::Response) {
+    fn ui(&mut self, ui: &mut egui::Ui) -> bool {
         // ui.horizontal(|ui| {
         // ui.selectable_value(
         //     &mut self.active_tab,
@@ -1319,6 +1321,6 @@ impl DebuggerWindowImpl for VariableWindow {
             ActiveTab::VariableList => self.render_variable_list(ui),
             ActiveTab::StackView => self.render_stack(ui),
         };
-        (false, res)
+        false
     }
 }

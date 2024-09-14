@@ -29,6 +29,7 @@ use crate::debugger::Debugger;
 mod debugger;
 mod prompt;
 mod util;
+mod variables;
 #[cfg(feature = "web")]
 mod web;
 
@@ -50,7 +51,7 @@ struct Args {
     mode: DebugInterfaceMode,
 }
 
-fn debuggee_init(prog: PathBuf) -> Result<(), DebugError> {
+pub fn debuggee_init(prog: PathBuf) -> Result<(), DebugError> {
     match ptrace::traceme() {
         Ok(_) => (),
         Err(e) => {

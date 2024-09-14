@@ -73,6 +73,8 @@ impl FrameHistory {
             rounding: style.rounding,
             fill: ui.visuals().extreme_bg_color,
             stroke: ui.style().noninteractive().bg_stroke,
+            fill_texture_id: TextureId::default(),
+            uv: Rect::ZERO,
         }));
 
         let rect = rect.shrink(4.0);

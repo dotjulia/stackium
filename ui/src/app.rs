@@ -1,4 +1,5 @@
-use egui::{Align, Layout, TextureHandle};
+use egui::{load::SizedTexture, Align, Layout, TextureHandle};
+use egui_dock::{DockArea, DockState, TabViewer};
 use poll_promise::Promise;
 use stackium_shared::{Command, CommandOutput, DebugMeta};
 use url::Url;
@@ -12,10 +13,10 @@ use crate::{
     graph_window::GraphWindow,
     location::LocationWindow,
     map_window::MapWindow,
+    memory_window::MemoryWindow,
     register_window::RegisterWindow,
     settings_window::SettingsWindow,
     toggle::toggle_ui,
-    variable_window::VariableWindow,
 };
 
 enum State {
@@ -23,17 +24,136 @@ enum State {
         backend_url: Url,
         sidebar_open: bool,
         metadata: Promise<Result<DebugMeta, String>>,
-        windows: Vec<DebuggerWindow>,
+        dockable_windows: DockState<&'static str>,
         icon: Option<TextureHandle>,
         mapping: Promise<Result<(), String>>,
-        fullscreen: Option<&'static str>,
+        restart_request: Option<Promise<Result<(), String>>>,
+        tab_viewer: CustomTabViewer,
     },
     UnrecoverableFailure {
         message: String,
+        restart_request: Option<Promise<Result<(), String>>>,
     },
 }
 
+impl State {
+    fn construct_debugging_state(backend_url: &Url) -> Self {
+        let tab_viewer = CustomTabViewer {
+            dirty: false,
+            windows: vec![
+                DebuggerWindow {
+                    title: "Metadata",
+                    is_active: false,
+                    body: Box::from(Metadata::new(backend_url.clone())),
+                },
+                DebuggerWindow {
+                    title: "Location",
+                    is_active: false,
+                    body: Box::from(LocationWindow::new(backend_url.clone())),
+                },
+                DebuggerWindow {
+                    title: "Breakpoints",
+                    is_active: true,
+                    body: Box::from(BreakpointWindow::new(backend_url.clone())),
+                },
+                DebuggerWindow {
+                    title: "Code",
+                    is_active: true,
+                    body: Box::from(CodeWindow::new(backend_url.clone())),
+                },
+                DebuggerWindow {
+                    title: "Settings",
+                    is_active: false,
+                    body: Box::from(SettingsWindow::new()),
+                },
+                DebuggerWindow {
+                    title: "Controls",
+                    is_active: true,
+                    body: Box::from(ControlWindow::new(backend_url.clone())),
+                },
+                DebuggerWindow {
+                    title: "Memory",
+                    is_active: true,
+                    body: Box::from(MemoryWindow::new(backend_url.clone())),
+                },
+                DebuggerWindow {
+                    title: "Graph",
+                    is_active: false,
+                    body: Box::from(GraphWindow::new(backend_url.clone())),
+                },
+                DebuggerWindow {
+                    title: "Registers",
+                    is_active: false,
+                    body: Box::from(RegisterWindow::new(backend_url.clone())),
+                },
+                DebuggerWindow {
+                    title: "Memory Mapping",
+                    is_active: false,
+                    body: Box::from(MapWindow::new(backend_url.clone())),
+                },
+            ],
+        };
+        let mut dock_state = DockState::new(vec!["Memory"]);
+        let [_, left] = dock_state.main_surface_mut().split_left(
+            egui_dock::NodeIndex::root(),
+            0.5,
+            vec!["Code"],
+        );
+        let [_, bottom] = dock_state
+            .main_surface_mut()
+            .split_below(left, 0.7, vec!["Controls"]);
+        dock_state
+            .main_surface_mut()
+            .split_right(bottom, 0.3, vec!["Breakpoints"]);
+        Self::Debugging {
+            icon: None,
+            sidebar_open: true,
+            backend_url: backend_url.clone(),
+            metadata: { dispatch!(backend_url.clone(), Command::DebugMeta, DebugMeta) },
+            mapping: { dispatch_command_and_then(backend_url.clone(), Command::Maps, |maps| {}) },
+            dockable_windows: dock_state,
+            tab_viewer,
+            restart_request: None,
+        }
+    }
+}
+
+struct CustomTabViewer {
+    dirty: bool,
+    windows: Vec<DebuggerWindow>,
+}
+
+impl TabViewer for CustomTabViewer {
+    type Tab = &'static str;
+
+    fn title(&mut self, tab: &mut Self::Tab) -> egui::WidgetText {
+        tab.to_string().into()
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, tab_name: &mut Self::Tab) {
+        let tab = self
+            .windows
+            .iter_mut()
+            .find(|w| w.title == *tab_name)
+            .unwrap();
+        let dirty = tab.body.ui(ui);
+        if dirty {
+            self.dirty = true;
+        }
+    }
+    fn on_close(&mut self, _tab: &mut Self::Tab) -> bool {
+        self.windows
+            .iter_mut()
+            .find(|w| w.title == *_tab)
+            .unwrap()
+            .is_active = false;
+        true
+    }
+}
+
+// state concept does not work well with current error handling design, could be improved
 pub struct StackiumApp {
+    backend_url: Url,
     state: State,
     next_state: Option<State>,
 }
@@ -42,69 +162,9 @@ impl StackiumApp {
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let backend_url = Url::parse("http://localhost:8080").unwrap();
         Self {
+            state: State::construct_debugging_state(&backend_url),
+            backend_url,
             next_state: None,
-            state: State::Debugging {
-                icon: None,
-                sidebar_open: true,
-                backend_url: backend_url.clone(),
-                metadata: { dispatch!(backend_url.clone(), Command::DebugMeta, DebugMeta) },
-                mapping: {
-                    dispatch_command_and_then(backend_url.clone(), Command::Maps, |maps| {})
-                },
-                windows: vec![
-                    DebuggerWindow {
-                        title: "Metadata",
-                        is_active: false,
-                        body: Box::from(Metadata::new(backend_url.clone())),
-                    },
-                    DebuggerWindow {
-                        title: "Location",
-                        is_active: false,
-                        body: Box::from(LocationWindow::new(backend_url.clone())),
-                    },
-                    DebuggerWindow {
-                        title: "Breakpoints",
-                        is_active: true,
-                        body: Box::from(BreakpointWindow::new(backend_url.clone())),
-                    },
-                    DebuggerWindow {
-                        title: "Code",
-                        is_active: true,
-                        body: Box::from(CodeWindow::new(backend_url.clone())),
-                    },
-                    DebuggerWindow {
-                        title: "Settings",
-                        is_active: false,
-                        body: Box::from(SettingsWindow::new()),
-                    },
-                    DebuggerWindow {
-                        title: "Controls",
-                        is_active: true,
-                        body: Box::from(ControlWindow::new(backend_url.clone())),
-                    },
-                    DebuggerWindow {
-                        title: "Memory",
-                        is_active: false,
-                        body: Box::from(VariableWindow::new(backend_url.clone())),
-                    },
-                    DebuggerWindow {
-                        title: "Graph",
-                        is_active: false,
-                        body: Box::from(GraphWindow::new(backend_url.clone())),
-                    },
-                    DebuggerWindow {
-                        title: "Registers",
-                        is_active: false,
-                        body: Box::from(RegisterWindow::new(backend_url.clone())),
-                    },
-                    DebuggerWindow {
-                        title: "Memory Mapping",
-                        is_active: false,
-                        body: Box::from(MapWindow::new(backend_url)),
-                    },
-                ],
-                fullscreen: None,
-            },
         }
     }
 }
@@ -118,19 +178,21 @@ impl eframe::App for StackiumApp {
             sidebar_open: _,
             backend_url: _,
             metadata: _,
-            windows,
+            dockable_windows: _,
+            tab_viewer,
             icon: _,
-            fullscreen: _,
             mapping,
+            restart_request: _,
         } = &mut self.state
         {
             if let Some(Err(_)) = mapping.ready() {
                 self.next_state = Some(State::UnrecoverableFailure {
                     message: "Child process exited".to_owned(),
+                    restart_request: None,
                 });
                 // return;
             }
-            for window in windows {
+            for window in tab_viewer.windows.iter_mut() {
                 window.body.update(ctx, frame);
             }
         }
@@ -146,7 +208,7 @@ impl eframe::App for StackiumApp {
                 // #[cfg(not(target_arch = "wasm32"))] // no File->Quit on web pages!
                 ui.menu_button("File", |ui| {
                     if ui.button("Quit").clicked() {
-                        frame.close();
+                        // frame.
                     }
                 });
 
@@ -159,13 +221,36 @@ impl eframe::App for StackiumApp {
                 backend_url,
                 metadata,
                 sidebar_open,
-                windows,
+                dockable_windows,
                 icon,
-                fullscreen,
                 mapping,
+                tab_viewer,
+                restart_request,
             } => {
+                tab_viewer.dirty = false;
+
+                if let Some(Some(Ok(p))) = restart_request.as_mut().map(|p| p.ready()) {
+                    *restart_request = None;
+                    tab_viewer.dirty = true;
+                }
+
                 egui::SidePanel::left("side_panel").show_animated(ctx, *sidebar_open, |ui| {
-                    egui::widgets::global_dark_light_mode_buttons(ui);
+                    ui.horizontal(|ui| {
+                        egui::widgets::global_dark_light_mode_buttons(ui);
+                        if ui
+                            .add(
+                                egui::Button::new("↻ Restart Process")
+                                    .fill(ui.visuals().window_fill),
+                            )
+                            .clicked()
+                        {
+                            *restart_request = Some(dispatch_command_and_then(
+                                backend_url.clone(),
+                                Command::RestartDebugee,
+                                |_| {},
+                            ));
+                        }
+                    });
                     let texture = icon.get_or_insert_with(|| {
                         let icon = include_bytes!("../assets/icon-1024.png");
                         let image = match load_image_from_memory(icon) {
@@ -183,12 +268,15 @@ impl eframe::App for StackiumApp {
 
                     ui.with_layout(Layout::top_down(Align::Center), |ui| {
                         ui.add_space(10.);
-                        ui.image(&mut texture.clone(), egui::Vec2::new(100., 100.));
+                        ui.image(SizedTexture::new(
+                            &mut texture.clone(),
+                            egui::Vec2::new(100., 100.),
+                        ));
                         ui.heading("Stackium");
                         ui.add_space(20.);
                     });
                     ui.heading("Windows");
-                    for window in windows.iter_mut() {
+                    for window in tab_viewer.windows.iter_mut() {
                         ui.horizontal(|ui| {
                             if ui.label(window.title).clicked() {
                                 window.is_active = !window.is_active;
@@ -198,14 +286,21 @@ impl eframe::App for StackiumApp {
                                     .with_main_align(Align::Max)
                                     .with_main_justify(true),
                                 |ui| {
-                                    toggle_ui(ui, &mut window.is_active);
+                                    if toggle_ui(ui, &mut window.is_active).changed() {
+                                        if window.is_active {
+                                            dockable_windows.add_window(vec![window.title]);
+                                        } else {
+                                            dockable_windows
+                                                .retain_tabs(|tab| tab != &window.title);
+                                        }
+                                    }
                                 },
                             );
                         });
                     }
                     ui.with_layout(Layout::bottom_up(Align::LEFT), |ui| {
                         ui.horizontal(|ui| {
-                            ui.image(texture, egui::Vec2::new(20., 20.));
+                            ui.image(SizedTexture::new(texture, egui::Vec2::new(20., 20.)));
                             ui.hyperlink_to(
                                 format!("Stackium {}", egui::special_emojis::GITHUB),
                                 "https://github.com/dotjulia/stackium",
@@ -216,79 +311,87 @@ impl eframe::App for StackiumApp {
                     });
                 });
 
-                egui::CentralPanel::default().show(ctx, |ui| match metadata.ready() {
-                    Some(m) => match m {
-                        Ok(m) => {
-                            if !*sidebar_open {
-                                if ui.button("Open Sidebar").clicked() {
-                                    *sidebar_open = true;
-                                }
-                            }
-
-                            let mut is_dirty = false;
-                            let mut close_fullscreen = false;
-                            if let Some(fullscreen) = fullscreen {
-                                if ui.button("Exit Fullscreen").clicked() {
-                                    close_fullscreen = true;
-                                }
-                                let window =
-                                    windows.iter_mut().find(|w| &w.title == fullscreen).unwrap();
-                                window.body.ui(ui);
-                            } else {
-                                ui.heading(format!("Debugging {}", m.binary_name));
-                                ui.label(format!("Number of functions: {}", m.functions));
-                                ui.label(format!("Number of variables: {}", m.vars));
-                                ui.label(format!("Files: {}", m.files.join(", ")));
-                                for window in windows.iter_mut() {
-                                    if window.is_active {
-                                        egui::Window::new(window.title)
-                                            .open(&mut window.is_active)
-                                            .show(ctx, |ui| {
-                                                ui.with_layout(
-                                                    Layout::top_down(Align::Max),
-                                                    |ui| {
-                                                        if ui.button("Fullscreen").clicked() {
-                                                            *fullscreen = Some(window.title);
-                                                        }
-                                                    },
-                                                );
-                                                let (dirty, res) = window.body.ui(ui);
-                                                if dirty {
-                                                    is_dirty = true;
-                                                }
-                                                res
-                                            });
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::central_panel(&ctx.style()).inner_margin(0.))
+                    .show(ctx, |ui| match metadata.ready() {
+                        Some(m) => match m {
+                            Ok(m) => {
+                                if !*sidebar_open {
+                                    if ui.button("Open Sidebar").clicked() {
+                                        *sidebar_open = true;
                                     }
                                 }
+
+                                DockArea::new(dockable_windows)
+                                    .style(egui_dock::Style::from_egui(ui.style()))
+                                    .draggable_tabs(true)
+                                    .show_close_buttons(true)
+                                    .show_window_close_buttons(true)
+                                    // .allowed_splits(self.context.allowed_splits)
+                                    .show_window_collapse_buttons(true)
+                                    .show_inside(ui, tab_viewer);
+                                if tab_viewer.dirty {
+                                    tab_viewer.dirty = false;
+                                    tab_viewer.windows.iter_mut().for_each(|w| w.body.dirty());
+                                    *mapping = dispatch_command_and_then(
+                                        backend_url.clone(),
+                                        Command::Maps,
+                                        |_| {},
+                                    )
+                                }
                             }
-                            if close_fullscreen {
-                                *fullscreen = None;
+                            Err(e) => {
+                                self.next_state = Some(State::UnrecoverableFailure {
+                                    message: e.clone(),
+                                    restart_request: None,
+                                });
+                                ui.heading("Loading...".to_owned());
                             }
-                            if is_dirty {
-                                windows.iter_mut().for_each(|w| w.body.dirty());
-                                *mapping = dispatch_command_and_then(
-                                    backend_url.clone(),
-                                    Command::Maps,
-                                    |maps| {},
-                                )
-                            }
-                        }
-                        Err(e) => {
-                            self.next_state =
-                                Some(State::UnrecoverableFailure { message: e.clone() });
+                        },
+                        None => {
                             ui.heading("Loading...".to_owned());
                         }
-                    },
-                    None => {
-                        ui.heading("Loading...".to_owned());
-                    }
-                });
+                    });
             }
-            State::UnrecoverableFailure { message } => {
+            State::UnrecoverableFailure {
+                message,
+                restart_request,
+            } => {
                 egui::CentralPanel::default().show(ctx, |ui| {
+                    match restart_request.as_mut().map(|p| p.ready()) {
+                        Some(Some(Ok(p))) => {
+                            *restart_request = None;
+                            self.next_state =
+                                Some(State::construct_debugging_state(&self.backend_url));
+                            return;
+                        }
+                        Some(Some(Err(e))) => {
+                            self.next_state = Some(State::UnrecoverableFailure {
+                                message: format!("Restart failed: {}\n Please try manually restarting the debugger in the terminal.", e),
+                                restart_request: None,
+                            });
+                            return;
+                        }
+                        Some(None) => {
+                            ui.spinner();
+                            return;
+                        }
+                        None => {}
+                    }
+
                     ui.heading("Error");
                     ui.label(message.clone());
                     ui.label("Please restart the debugger".to_owned());
+                    if ui
+                        .add(egui::Button::new("↻ Restart Process").fill(ui.visuals().window_fill))
+                        .clicked()
+                    {
+                        *restart_request = Some(dispatch_command_and_then(
+                            self.backend_url.clone(),
+                            Command::RestartDebugee,
+                            |_| {},
+                        ));
+                    }
                 });
             }
         }

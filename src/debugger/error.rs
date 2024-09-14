@@ -2,6 +2,7 @@ use std::{fmt::Display, str::Utf8Error};
 
 #[derive(Debug)]
 pub enum DebugError {
+    VariableNotMapped,
     NixError(nix::Error),
     FunctionNotFound,
     InvalidType,

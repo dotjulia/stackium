@@ -34,7 +34,7 @@ serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.93"
 tiny_http = "0.12"
 object = "0.31.1"
-gimli = "0.27.3"
+gimli = "0.31.0"
 env_logger = "0.10.0"
 schemars = "0.8.12"
 stackium_shared = { path = "./stackium_shared" }

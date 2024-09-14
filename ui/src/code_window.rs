@@ -1,4 +1,4 @@
-use egui::{CollapsingHeader, ComboBox, RichText, ScrollArea, Slider};
+use egui::{CollapsingHeader, ComboBox, Response, RichText, ScrollArea, Sense, Slider, Vec2};
 use poll_promise::Promise;
 use stackium_shared::{Breakpoint, BreakpointPoint, Command, CommandOutput, Location};
 use url::Url;
@@ -86,7 +86,7 @@ impl CodeWindow {
         });
         ScrollArea::both()
             .auto_shrink([false; 2])
-            .max_height(400.)
+            // .max_height(400.)
             .show_viewport(ui, |ui, _| {
                 ui.set_height(30.);
                 // ui.style_mut().wrap = Some(false);
@@ -191,7 +191,7 @@ impl CodeWindow {
         };
         ScrollArea::both()
             .auto_shrink([false; 2])
-            .max_height(400.)
+            // .max_height(400.)
             .show_viewport(ui, |ui, _| {
                 for (num, line) in code.lines().enumerate() {
                     let num = num + 1;
@@ -345,6 +345,8 @@ impl DebuggerWindowImpl for CodeWindow {
                 _ => unreachable!(),
             },
         );
+        self.file = Promise::from_ready(Err(String::new()));
+        self.displaying_file = String::new();
         self.breakpoints = dispatch!(
             self.backend_url.clone(),
             Command::GetBreakpoints,
@@ -360,7 +362,7 @@ impl DebuggerWindowImpl for CodeWindow {
             },
         );
     }
-    fn ui(&mut self, ui: &mut egui::Ui) -> (bool, egui::Response) {
+    fn ui(&mut self, ui: &mut egui::Ui) -> bool {
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.selected_window, Selected::Code, "Code");
             ui.selectable_value(
@@ -432,6 +434,6 @@ impl DebuggerWindowImpl for CodeWindow {
         // CollapsingHeader::new("Theme").show(ui, |ui| {
         // self.code_theme.ui(ui);
         // });
-        (dirty, ui.label("Code window"))
+        dirty
     }
 }

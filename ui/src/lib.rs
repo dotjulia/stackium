@@ -11,12 +11,28 @@ mod frame_history;
 mod graph_window;
 mod location;
 mod map_window;
+mod memory_window;
 mod register_window;
 mod settings_window;
 mod syntax_highlighting;
 mod toggle;
 mod variable_window;
 pub use app::StackiumApp;
+mod rotated_plot_text;
+
+trait LimitStringLen {
+    fn limit_string_len(&self, len: usize) -> Self;
+}
+
+impl LimitStringLen for String {
+    fn limit_string_len(&self, len: usize) -> Self {
+        if self.len() > len {
+            format!("{}..", &self[..len])
+        } else {
+            self.clone()
+        }
+    }
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn start_ui() -> eframe::Result<()> {

@@ -249,7 +249,7 @@ impl DebuggerWindowImpl for GraphWindow {
         self.mapping = dispatch!(self.backend_url.clone(), Command::Maps, Maps);
         self.registers = dispatch!(self.backend_url.clone(), Command::GetRegister, Registers);
     }
-    fn ui(&mut self, ui: &mut egui::Ui) -> (bool, egui::Response) {
+    fn ui(&mut self, ui: &mut egui::Ui) -> bool {
         let mut found_vars = vec![];
         if let (Some(Ok(mapping)), Some(Ok(variables)), Some(Ok(registers))) = (
             self.mapping.ready(),
@@ -279,10 +279,9 @@ impl DebuggerWindowImpl for GraphWindow {
             }
         }
         push_variables(&found_vars, &mut self.graph);
-        let response = self
-            .graph
+        self.graph
             .render(ui, ui.available_width(), ui.available_height());
-        (false, response)
+        false
     }
 }
 

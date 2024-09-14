@@ -30,8 +30,8 @@ impl DebuggerWindowImpl for RegisterWindow {
     fn dirty(&mut self) {
         self.registers = dispatch!(self.backend_url.clone(), Command::GetRegister, Registers);
     }
-    fn ui(&mut self, ui: &mut egui::Ui) -> (bool, egui::Response) {
-        let response = match self.registers.ready() {
+    fn ui(&mut self, ui: &mut egui::Ui) -> bool {
+        match self.registers.ready() {
             Some(registers) => match registers {
                 Ok(registers) => {
                     register_label!(ui, "Stack Pointer", registers.stack_pointer);
@@ -42,6 +42,6 @@ impl DebuggerWindowImpl for RegisterWindow {
             },
             None => ui.spinner(),
         };
-        (false, response)
+        false
     }
 }
