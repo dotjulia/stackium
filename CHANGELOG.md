@@ -1,1 +1,5 @@
-* setting `strip=true` for release builds to reduce binary size
+* merging UI rework
+  * window layout
+  * variable discovery
+  * memory visualization
+  * etc...
