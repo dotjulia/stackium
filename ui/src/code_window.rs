@@ -345,6 +345,8 @@ impl DebuggerWindowImpl for CodeWindow {
                 _ => unreachable!(),
             },
         );
+        self.file = Promise::from_ready(Err(String::new()));
+        self.displaying_file = String::new();
         self.breakpoints = dispatch!(
             self.backend_url.clone(),
             Command::GetBreakpoints,

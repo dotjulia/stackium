@@ -199,6 +199,7 @@ impl Debugger {
         let mut variables = vec![];
         let mapping = self.get_maps()?;
         for scope_variable in scope_variables {
+            println!("Discovering variable: {:?}", scope_variable);
             let mut scope_variables = check_variable_recursive(
                 &self,
                 &mapping,

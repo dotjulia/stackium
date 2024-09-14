@@ -54,7 +54,10 @@ pub fn get_function_meta<T: Reader>(
 pub fn get_piece_addr<T: gimli::Reader>(piece: &gimli::Piece<T>) -> Option<u64> {
     match piece.location {
         gimli::Location::Address { address } => Some(address),
-        _ => None,
+        _ => {
+            println!("Unknown location type: {:?}", piece.location);
+            None
+        }
     }
 }
 

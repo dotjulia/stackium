@@ -9,10 +9,18 @@ use std::collections::HashSet;
 use std::ops::Range;
 use url::Url;
 
+use crate::LimitStringLen;
 use crate::{
     command::dispatch_command_and_then, debugger_window::DebuggerWindowImpl,
     rotated_plot_text::RotText, variable_window::get_byte_size,
 };
+
+#[derive(PartialEq, Copy, Clone)]
+enum DataVisualization {
+    Hex,
+    Ascii,
+    Decimal,
+}
 
 pub struct MemoryWindow {
     backend_url: Url,
@@ -21,6 +29,7 @@ pub struct MemoryWindow {
     grid: bool,
     coordinates: bool,
     cached_addresses: Option<Vec<u64>>,
+    data_visualization: DataVisualization,
 }
 
 impl MemoryWindow {
@@ -32,6 +41,7 @@ impl MemoryWindow {
             grid: false,
             coordinates: false,
             cached_addresses: None,
+            data_visualization: DataVisualization::Hex,
         };
         ret.dirty();
         ret
@@ -59,15 +69,8 @@ fn render_pointer_arrow(
     arrow_counter: &mut i32,
     is_invalid: bool,
 ) {
-    // ui.arrows(
-    //     Arrows::new(
-    //         PlotPoints::new(vec![[start.x, start.y]]),
-    //         PlotPoints::new(vec![[end.x, end.y]]),
-    //     )
-    //     .tip_length(5.0f32),
-    // );
-    const ARROWS_HOME_POS: f64 = 30f64;
-    const ARROWS_HOME_OFFSET: f64 = 0.5;
+    const ARROWS_HOME_POS: f64 = 35f64;
+    const ARROWS_HOME_OFFSET: f64 = 1.0;
     const ARROWS_END_OFFSET: f64 = 7f64;
 
     let arrow_home = ARROWS_HOME_POS + ARROWS_HOME_OFFSET * *arrow_counter as f64;
@@ -149,15 +152,16 @@ fn render_type(
     arrow_counter: &mut i32,
 ) {
     let color = color_override.unwrap_or(COLORS[address as usize % COLORS.len()]);
-    let multiplier = if initial_bar { 2.0 } else { 1.0 };
+    let multiplier = if initial_bar { 2.5 } else { 1.0 };
     if let (Some(name), Some(memory)) = (&variable.name, &variable.memory) {
         let name = name_override.unwrap_or(name.clone());
         let mut position = addr_to_pos(address, &stack_range, Some(addresses));
         const BAR_PADDING: f64 = 0.2;
-        position.x += BAR_THICKNESS * (multiplier <= 1.5) as u32 as f64
+        position.x += BAR_THICKNESS * !initial_bar as u32 as f64
             + ADDR_LENGTH as f64
             + BAR_THICKNESS * offset as f64
-            + offset as f64 * BAR_PADDING;
+            + offset as f64 * BAR_PADDING
+            + (multiplier - 0.5) * !initial_bar as u64 as f64;
         let dest = ADDR_SPACING as f64 * get_byte_size(&variable.types, type_index) as f64;
         ui.polygon(
             Polygon::new(PlotPoints::new(vec![
@@ -169,7 +173,7 @@ fn render_type(
             .stroke(Stroke::new(1.0, color)),
         );
         ui.add(RotText::new(
-            name.clone(),
+            name.limit_string_len(get_byte_size(&variable.types, type_index) as usize * 2),
             -std::f32::consts::FRAC_PI_2,
             text_size(ui),
             (
@@ -243,28 +247,11 @@ fn render_variable(
     stack_range: Range<u64>,
     initial_bar: bool,
     arrow_counter: &mut i32,
+    visualization_style: DataVisualization,
 ) {
     if let (Some(address), Some(name), Some(memory)) =
         (variable.addr, &variable.name, &variable.memory)
     {
-        // if address < stack_range.start || address > stack_range.end {
-        //     // RENDER ADDRESSES FOR NON STACK'D VARIABLES
-        //     for (i, _) in memory.iter().enumerate() {
-        //         let addr = address - VARIABLE_MEM_PADDING + i as u64;
-        //         let mut byte_pos = addr_to_pos(addr, &stack_range, Some(addresses));
-        //         byte_pos.y += 0.5f64;
-        //         ui.text(
-        //             Text::new(
-        //                 byte_pos,
-        //                 RichText::new(format!("{:012x}", addr)).font(egui::FontId {
-        //                     size: text_size(ui),
-        //                     family: egui::FontFamily::Monospace,
-        //                 }),
-        //             )
-        //             .anchor(Align2::LEFT_CENTER),
-        //         );
-        //     }
-        // }
         render_type(
             ui,
             variable,
@@ -286,7 +273,20 @@ fn render_variable(
             ui.text(
                 Text::new(
                     byte_pos,
-                    RichText::new(format!("{:02x}", byte)).font(egui::FontId {
+                    RichText::new(match visualization_style {
+                        DataVisualization::Hex => format!("{:02x}", byte),
+                        DataVisualization::Ascii => {
+                            if *byte >= 0x20 && *byte <= 0x7e {
+                                format!("'{}'", *byte as char)
+                            } else if *byte == 0 {
+                                format!("'\\0")
+                            } else {
+                                format!("...")
+                            }
+                        }
+                        DataVisualization::Decimal => format!("{:03}", *byte),
+                    })
+                    .font(egui::FontId {
                         size: text_size(ui),
                         family: egui::FontFamily::Monospace,
                     }),
@@ -407,6 +407,21 @@ impl DebuggerWindowImpl for MemoryWindow {
         ui.horizontal(|ui| {
             ui.checkbox(&mut self.grid, "Show Grid");
             ui.checkbox(&mut self.coordinates, "Show Coordinates");
+            ui.selectable_value(
+                &mut self.data_visualization,
+                DataVisualization::Hex,
+                "⬢ Hex",
+            );
+            ui.selectable_value(
+                &mut self.data_visualization,
+                DataVisualization::Ascii,
+                "💬 Ascii",
+            );
+            ui.selectable_value(
+                &mut self.data_visualization,
+                DataVisualization::Decimal,
+                "🔢 Decimal",
+            );
         });
         if let (Some(Ok(variables)), Some(Ok(registers))) =
             (self.variables.ready(), self.registers.ready())
@@ -415,7 +430,7 @@ impl DebuggerWindowImpl for MemoryWindow {
             let mut deduplicated_variables = variables.clone();
             deduplicated_variables.sort_by(|a, b| a.addr.unwrap().cmp(&b.addr.unwrap()));
             deduplicated_variables.dedup_by(|a, b| a.addr.unwrap() == b.addr.unwrap());
-            self.cached_addresses = None;
+            // self.cached_addresses = None;
             if self.cached_addresses.is_none() {
                 let mut addresses = deduplicated_variables
                     .iter()
@@ -430,7 +445,10 @@ impl DebuggerWindowImpl for MemoryWindow {
                     .collect::<Vec<_>>();
                 addresses.sort();
                 for a in stack_range.clone() {
-                    addresses.remove(addresses.iter().position(|&x| x == a).unwrap_or_default());
+                    addresses
+                        .iter()
+                        .position(|&x| x == a)
+                        .map(|x| addresses.remove(x));
                 }
                 self.cached_addresses = Some(addresses.into_iter().collect());
             }
@@ -454,6 +472,7 @@ impl DebuggerWindowImpl for MemoryWindow {
                             stack_range.clone(),
                             true,
                             &mut arrow_counter,
+                            self.data_visualization,
                         );
                     }
                 });

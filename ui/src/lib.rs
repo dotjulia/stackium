@@ -20,6 +20,20 @@ mod variable_window;
 pub use app::StackiumApp;
 mod rotated_plot_text;
 
+trait LimitStringLen {
+    fn limit_string_len(&self, len: usize) -> Self;
+}
+
+impl LimitStringLen for String {
+    fn limit_string_len(&self, len: usize) -> Self {
+        if self.len() > len {
+            format!("{}..", &self[..len])
+        } else {
+            self.clone()
+        }
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn start_ui() -> eframe::Result<()> {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).

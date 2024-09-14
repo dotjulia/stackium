@@ -1,4 +1,5 @@
-use gimli::{EvaluationResult, Reader};
+use gimli::write::Attribute;
+use gimli::{EvaluationResult, Expression, Reader, Unit};
 use nix::unistd::ForkResult::{Child, Parent};
 use nix::{
     sys::{
@@ -95,7 +96,7 @@ fn unit_offset<T: gimli::Reader>(
 }
 
 impl Debugger {
-    pub fn new(child: Pid, object_file: PathBuf) -> Self {
+    fn create_dwarf_reader(object_file: &PathBuf) -> gimli::read::Dwarf<ConcreteReader> {
         let load_section = |id: gimli::SectionId| -> Result<Arc<Vec<u8>>, gimli::Error> {
             let bin = fs::read(object_file.clone()).unwrap();
             let object_file = object::File::parse(&bin[..]).unwrap();
@@ -116,14 +117,17 @@ impl Debugger {
             debug_println!("Dwarf Version = {}", version);
             if version != 4 {
                 eprintln!("Stackium currently only supports binaries built with dwarf debug version 4. Please compile with the \x1b[1;33m-gdwarf-4\x1b[0m flag!");
-                panic!();
+                // panic!();
             }
         }
+        dwarf
+    }
+    pub fn new(child: Pid, object_file: PathBuf) -> Self {
         Debugger {
             child,
+            dwarf: Debugger::create_dwarf_reader(&object_file),
             program: object_file,
             breakpoints: Vec::new(),
-            dwarf,
         }
     }
 
@@ -148,6 +152,32 @@ impl Debugger {
         Ok(output)
     }
 
+    pub fn decode_string_attribute(
+        name: gimli::AttributeValue<ConcreteReader>,
+        dwarf: &gimli::Dwarf<ConcreteReader>,
+        unit: &gimli::Unit<ConcreteReader>,
+    ) -> String {
+        // dwarf::attr_string?
+        match name {
+            gimli::AttributeValue::DebugStrOffsetsIndex(i) => {
+                let offset = dwarf.string_offset(&unit, i).unwrap();
+                let default_value = format!("<.debug_str+0x{:08x}>", offset.0);
+                dwarf
+                    .string(offset)
+                    .map(|s| s.to_string_lossy().map(|s| s.to_string()))
+                    .unwrap_or(Ok(default_value.clone()))
+                    .unwrap_or(default_value)
+            }
+            gimli::AttributeValue::String(_) | gimli::AttributeValue::DebugStrRef(_) => name
+                .string_value(&dwarf.debug_str)
+                .unwrap()
+                .to_string()
+                .unwrap()
+                .to_string(),
+            _ => todo!(),
+        }
+    }
+
     fn decode_type<T: gimli::Reader<Offset = usize>>(
         &self,
         offset: gimli::AttributeValue<T>,
@@ -167,6 +197,7 @@ impl Debugger {
                     mut known_types: DataType,
                 ) -> Result<Option<DataType>, DebugError> {
                     let dwarf = &debugger.dwarf;
+                    let unit = dwarf.unit(unit_header.clone()).unwrap();
                     if node.entry().offset() == find_offset {
                         match node.entry().tag() {
                             gimli::DW_TAG_base_type => {
@@ -177,12 +208,11 @@ impl Debugger {
                                     known_types.0.push((
                                         find_offset.0,
                                         TypeName::Name {
-                                            name: name
-                                                .string_value(&dwarf.debug_str)
-                                                .unwrap()
-                                                .to_string()
-                                                .unwrap()
-                                                .to_string(),
+                                            name: Debugger::decode_string_attribute(
+                                                name.value(),
+                                                dwarf,
+                                                &unit,
+                                            ),
                                             byte_size: byte_size.udata_value().unwrap() as usize,
                                         },
                                     ));
@@ -207,11 +237,11 @@ impl Debugger {
                                     let name = if let Ok(Some(name)) =
                                         node.entry().attr(gimli::DW_AT_name)
                                     {
-                                        name.string_value(&dwarf.debug_str)
-                                            .unwrap()
-                                            .to_string()
-                                            .unwrap()
-                                            .to_string()
+                                        Debugger::decode_string_attribute(
+                                            name.value(),
+                                            dwarf,
+                                            &unit,
+                                        )
                                     } else {
                                         String::new()
                                     };
@@ -235,7 +265,6 @@ impl Debugger {
                                     });
                                     if let Some(index) = index {
                                         let mut ret_vec = known_types.clone();
-                                        debug_println!("Type already known");
                                         ret_vec.0.push((
                                             unit_offset(type_field.value()).unwrap(),
                                             TypeName::Ref { index: Some(index) },
@@ -316,11 +345,7 @@ impl Debugger {
                                     node.entry().attr(gimli::DW_AT_byte_size)?,
                                 );
                                 let name = if let Some(name) = name {
-                                    name.string_value(&dwarf.debug_str)
-                                        .unwrap()
-                                        .to_string()
-                                        .unwrap()
-                                        .to_string()
+                                    Debugger::decode_string_attribute(name.value(), dwarf, &unit)
                                 } else {
                                     "unnamed struct".to_owned()
                                 };
@@ -330,7 +355,7 @@ impl Debugger {
                                     0
                                 };
                                 // Push Structure first in case of self referential struct
-                                debug_println!("Decoding struct: {} {:?}", &name, known_types);
+                                // debug_println!("Decoding struct: {} {:?}", &name, known_types);
 
                                 known_types.0.push((
                                     find_offset.0,
@@ -353,12 +378,11 @@ impl Debugger {
                                         child.entry().attr(gimli::DW_AT_type),
                                         child.entry().attr(gimli::DW_AT_data_member_location),
                                     ) {
-                                        let name = name
-                                            .string_value(&dwarf.debug_str)
-                                            .unwrap()
-                                            .to_string()
-                                            .unwrap()
-                                            .to_string();
+                                        let name = Debugger::decode_string_attribute(
+                                            name.value(),
+                                            dwarf,
+                                            &unit,
+                                        );
                                         let index = if let Some(index) =
                                             known_types.0.iter().position(|t| {
                                                 t.0 == unit_offset(typeoffset.value()).unwrap()
@@ -456,6 +480,67 @@ impl Debugger {
         Ok(value)
     }
 
+    fn evaluate_expression(
+        &self,
+        unit: &Unit<ConcreteReader>,
+        location: Expression<ConcreteReader>,
+    ) -> Result<Vec<gimli::Piece<ConcreteReader>>, DebugError> {
+        let mut evaluation = location.evaluation(unit.encoding());
+        let mut result = evaluation.evaluate().unwrap();
+        while result != EvaluationResult::Complete {
+            // println!("{:?}", result);
+            match result {
+                EvaluationResult::Complete => panic!(),
+                EvaluationResult::RequiresMemory {
+                    address,
+                    size,
+                    space,
+                    base_type,
+                } => {
+                    // size is at most word size
+                    let data = self.read(address as *mut _)?;
+                    // println("{:?}", evaluation.state)
+                    println!("{:?} {:?} {:?} {:?}", address, size, space, base_type);
+                    result = evaluation.resume_with_memory(gimli::Value::Generic(data))?;
+                }
+                EvaluationResult::RequiresRegister {
+                    register,
+                    base_type: _,
+                } => {
+                    let value = self.get_register_from_abi(register.0)?;
+                    result = evaluation.resume_with_register(gimli::Value::U64(value))?;
+                }
+                EvaluationResult::RequiresFrameBase => {
+                    let base_pointer = Registers::from_regs(self.get_registers()?).base_pointer;
+                    result = evaluation.resume_with_frame_base(base_pointer)?;
+                }
+                EvaluationResult::RequiresTls(_) => todo!(),
+                EvaluationResult::RequiresCallFrameCfa => todo!(),
+                EvaluationResult::RequiresAtLocation(_) => todo!(),
+                EvaluationResult::RequiresEntryValue(_) => todo!(),
+                EvaluationResult::RequiresParameterRef(_) => todo!(),
+                EvaluationResult::RequiresRelocatedAddress(addr) => {
+                    // let mut iter = self.dwarf.debug_info.units();
+                    // while let Ok(Some(header)) = iter.next() {
+                    // let unit = self.dwarf.unit(header);
+                    // }
+                    // todo!()
+                    result = evaluation.resume_with_relocated_address(addr)?;
+                }
+                EvaluationResult::RequiresIndexedAddress { index, relocate: _ } => {
+                    let addr = self.dwarf.debug_addr.get_address(
+                        unit.header.address_size(),
+                        unit.addr_base,
+                        index,
+                    )?;
+                    result = evaluation.resume_with_indexed_address(addr)?;
+                }
+                EvaluationResult::RequiresBaseType(_) => todo!(),
+            }
+        }
+        Ok(evaluation.result())
+    }
+
     pub fn read_variables(&self) -> Result<Vec<Variable>, DebugError> {
         let mut sub_entry;
         let mut unit;
@@ -471,65 +556,76 @@ impl Debugger {
                         gimli::AttributeValue::Addr(addr) => {
                             curr_low_pc = addr;
                         },
-                        _ => { debug_println!("unexpected low pc value: {:#?}", lpc); }
+                        gimli::AttributeValue::DebugAddrIndex(i) => {
+                            let addr = self.dwarf.address(&unit, i).unwrap();
+                            curr_low_pc = addr;
+                        }
+                        _ => { println!("unexpected low pc value: {:#?}", lpc); }
                     }
                 }
 
                 if let Ok(Some(hpc)) = sub_entry.attr_value(gimli::DW_AT_high_pc) {
-                    curr_high_pc = curr_low_pc + hpc.udata_value().unwrap_or(0);
+                    curr_high_pc = curr_low_pc + hpc.udata_value().unwrap();
                 }
 
             }
-            if sub_entry.tag() == gimli::DW_TAG_variable || sub_entry.tag() == gimli::DW_TAG_formal_parameter {
+            if (sub_entry.tag() == gimli::DW_TAG_variable || sub_entry.tag() == gimli::DW_TAG_formal_parameter) && sub_entry.attr_value(gimli::DW_AT_location)?.is_some() {
                 let mut var = Variable::default();
-                if let Some(location) = sub_entry.attr_value(gimli::DW_AT_location)? {
-                    let location = location.exprloc_value().unwrap();
-                    let mut evaluation = location.evaluation(unit.encoding());
-                    let mut result = evaluation.evaluate().unwrap();
-                    while result != EvaluationResult::Complete {
-                        match result {
-                            EvaluationResult::Complete => panic!(),
-                            EvaluationResult::RequiresMemory { address: _, size: _, space: _, base_type: _ } => todo!(),
-                            EvaluationResult::RequiresRegister { register, base_type: _ } => {
-                                let value = self.get_register_from_abi(register.0)?;
-                                result = evaluation.resume_with_register(gimli::Value::U64(value))?;
-                            },
-                            EvaluationResult::RequiresFrameBase => {
-                                let base_pointer = Registers::from_regs(self.get_registers()?).base_pointer;
-                                result = evaluation.resume_with_frame_base(base_pointer)?;
 
-                            },
-                            EvaluationResult::RequiresTls(_) => todo!(),
-                            EvaluationResult::RequiresCallFrameCfa => todo!(),
-                            EvaluationResult::RequiresAtLocation(_) => todo!(),
-                            EvaluationResult::RequiresEntryValue(_) => todo!(),
-                            EvaluationResult::RequiresParameterRef(_) => todo!(),
-                            EvaluationResult::RequiresRelocatedAddress(addr) => {
-                                // let mut iter = self.dwarf.debug_info.units();
-                                // while let Ok(Some(header)) = iter.next() {
-                                    // let unit = self.dwarf.unit(header);
-                                // }
-                                // todo!()
-                                result = evaluation.resume_with_relocated_address(addr)?;
-                            },
-                            EvaluationResult::RequiresIndexedAddress { index, relocate: _ } => {
-                                let addr = self.dwarf.debug_addr.get_address(unit.header.address_size(), unit.addr_base, index)?;
-                                result = evaluation.resume_with_indexed_address(addr)?;
-
-                            },
-                            EvaluationResult::RequiresBaseType(_) => todo!(),
-                        }
-                    }
-                    let pieces = evaluation.result();
-                    var.addr = get_piece_addr(&pieces[0]);
-                    var.value = self.retrieve_pieces(pieces).ok();
-                }
                 var.type_name = self.decode_type(sub_entry.attr(gimli::DW_AT_type)?.unwrap().value(), DataType(vec![])).ok();
 
                 if let Some(name) = sub_entry.attr(gimli::DW_AT_name)? {
-                    if let Some(name) = name.string_value(&self.dwarf.debug_str) {
-                        let name = name.to_string()?;
-                        var.name = Some(name.to_string());
+                    var.name = Some(Debugger::decode_string_attribute(
+                        name.value(),
+                        &self.dwarf,
+                        &unit,
+                    ));
+                }
+                if let Some(location) = sub_entry.attr_value(gimli::DW_AT_location)? {
+                    let mut by_offset = |offset| -> Result<(), DebugError> {
+                        let mut locations = self.dwarf.locations(&unit, offset).unwrap();
+                        println!("{:?}", locations);
+                        println!("{:?}", var.name);
+                        let mut expression = None;
+                        while let Some(location) = locations.next()? {
+                            println!("{:?}", location);
+                            if self.get_pc()? >= location.range.begin && self.get_pc()? <= location.range.end {
+                                expression = Some(location.data);
+                            }
+                        }
+                        let expression = expression.unwrap_or_else(|| {
+                            println!("No expression found for variable: {:?} in current scope", var.name);
+                            self.dwarf.locations(&unit, offset).unwrap().next().unwrap().unwrap().data
+                        });
+                        let pieces = self.evaluate_expression(&unit, expression)?;
+                        var.addr = get_piece_addr(&pieces[0]);
+                        var.value = self.retrieve_pieces(pieces).ok();
+                        Ok(())
+                    };
+                    match location {
+                        gimli::AttributeValue::Exprloc(_) | gimli::AttributeValue::Block(_) => {
+                            let location = location.exprloc_value().unwrap();
+                            let pieces = self.evaluate_expression(&unit, location)?;
+                            var.addr = get_piece_addr(&pieces[0]);
+                            var.value = self.retrieve_pieces(pieces).ok()
+                        },
+                        gimli::AttributeValue::LocationListsRef(offset) => {
+                            by_offset(offset)?
+                        },
+                        gimli::AttributeValue::DebugLocListsIndex(i) => {
+                            let offset = self.dwarf.locations_offset(&unit, i).unwrap();
+                            by_offset(offset)?
+                        }
+                        _ => {
+                            println!("Unexpected location type: {:#?}", location);
+                            todo!()
+                        }
+                    }
+                } else {
+                    println!("Missing location for variable: {} (Var: {}) (Param: {})", sub_entry.tag(), gimli::DW_TAG_variable, gimli::DW_TAG_formal_parameter);
+                    let mut iter = sub_entry.attrs();
+                    while let Some(attr) = iter.next()? {
+                        println!("{}: {:#?}", dw_at_to_string(attr.name()), attr.value());
                     }
                 }
                 if let Some(file) = sub_entry.attr(gimli::DW_AT_decl_file)? {
@@ -544,7 +640,9 @@ impl Debugger {
                 }
                 var.high_pc = curr_high_pc;
                 var.low_pc = curr_low_pc;
-                variables.push(var);
+                if self.get_pc()? >= curr_low_pc && self.get_pc()? <= curr_high_pc {
+                    variables.push(var);
+                }
             }
         });
         Ok(variables)
@@ -683,18 +781,16 @@ impl Debugger {
         match command {
             Command::Maps => Ok(CommandOutput::Maps(self.get_maps()?)),
             Command::RestartDebugee => {
-                // Disable breakpoints so we can enable the same breakpoints in the new process
+                // Get locations for breakpoints, addresses may change during reload
+                let lines: Vec<Location> = self
+                    .breakpoints
+                    .iter()
+                    .map(|b| b.location.clone())
+                    .collect();
                 for breakpoint in self.breakpoints.iter_mut() {
-                    match breakpoint.disable(self.child) {
-                        Ok(_) => (),
-                        Err(e) => {
-                            // Debuggee may already be dead, restarting should still work
-                            // manually disable the breakpoint so we can re-enable it
-                            breakpoint.enabled = false;
-                            println!("Assuming child is already dead, disabling breakpoint manually: {:?}", e);
-                        }
-                    }
+                    let _ = breakpoint.disable(self.child);
                 }
+                self.breakpoints.clear();
                 match ptrace::kill(self.child) {
                     Ok(a) => debug_println!("Killed child: {:?}", a),
                     Err(e) => debug_println!("Failed to kill child: {:?}", e),
@@ -708,9 +804,16 @@ impl Debugger {
                         Parent { child } => {
                             self.child = child;
                             self.waitpid()?;
+                            // Reload binary to get updated debug info
+                            self.dwarf = Debugger::create_dwarf_reader(&self.program);
                             // Enable breakpoints in the new process
-                            for breakpoint in self.breakpoints.iter_mut() {
+                            for line in lines {
+                                // Find address in new debug info
+                                let addr = get_addr_from_line(&self.dwarf, line.line, line.file)?;
+                                let mut breakpoint =
+                                    Breakpoint::new(&self.dwarf, self.child, addr as *const u8)?;
                                 breakpoint.enable(self.child)?;
+                                self.breakpoints.push(breakpoint);
                             }
                             Ok(CommandOutput::None)
                         }
