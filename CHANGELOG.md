@@ -1,5 +1,3 @@
-* merging UI rework
-  * window layout
-  * variable discovery
-  * memory visualization
-  * etc...
+* zoom buttons
+* egui_dock fixes
+* update egui
