@@ -42,6 +42,6 @@ pub fn start_ui() -> eframe::Result<()> {
     eframe::run_native(
         "eframe template",
         native_options,
-        Box::new(|cc| Box::new(crate::StackiumApp::new(cc))),
+        Box::new(|cc| Ok(Box::new(crate::StackiumApp::new(cc)))),
     )
 }
