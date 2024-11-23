@@ -615,7 +615,7 @@ fn render_section(ui: &mut egui::Ui, start: u64, memory: &Vec<u8>, name: &String
         //     },
         // );
         ui.vertical(|ui| {
-            ui.add(egui::Label::new(name).wrap(false));
+            ui.add(egui::Label::new(name) /*.wrap()*/);
             for (i, byte) in memory.iter().enumerate().rev() {
                 ui.add(
                     egui::Label::new(
@@ -630,8 +630,7 @@ fn render_section(ui: &mut egui::Ui, start: u64, memory: &Vec<u8>, name: &String
                             }
                         ))
                         .monospace(),
-                    )
-                    .wrap(false),
+                    ), //.wrap(),
                 );
             }
             ui.separator();
@@ -765,27 +764,24 @@ impl VariableWindow {
                                 {
                                     body.row(20.0, |mut row| {
                                         row.col(|ui| {
-                                            ui.add(
-                                                egui::Label::new(format!(
-                                                    "{}: {}",
-                                                    variable
-                                                        .name
-                                                        .clone()
-                                                        .unwrap_or("unknown".to_owned()),
-                                                    variable
-                                                        .type_name
-                                                        .clone()
-                                                        .unwrap_or(DataType(vec![(
-                                                            0,
-                                                            stackium_shared::TypeName::Name {
-                                                                name: "??".to_owned(),
-                                                                byte_size: 0
-                                                            }
-                                                        )]))
-                                                        .to_string()
-                                                ))
-                                                .wrap(false),
-                                            );
+                                            ui.add(egui::Label::new(format!(
+                                                "{}: {}",
+                                                variable
+                                                    .name
+                                                    .clone()
+                                                    .unwrap_or("unknown".to_owned()),
+                                                variable
+                                                    .type_name
+                                                    .clone()
+                                                    .unwrap_or(DataType(vec![(
+                                                        0,
+                                                        stackium_shared::TypeName::Name {
+                                                            name: "??".to_owned(),
+                                                            byte_size: 0
+                                                        }
+                                                    )]))
+                                                    .to_string()
+                                            )));
                                         });
                                         row.col(|ui| {
                                             ui.label(format!("{:#x}", address));

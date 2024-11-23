@@ -56,7 +56,9 @@ impl CodeWindow {
         if response.clicked() {
             response.mark_changed();
         }
-        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, is_on, ""));
+        response.widget_info(|| {
+            egui::WidgetInfo::selected(egui::WidgetType::Checkbox, is_on, false, "")
+        });
         if ui.is_rect_visible(rect) {
             let visuals = ui.style().interact_selectable(&response, is_on);
             if is_on {
