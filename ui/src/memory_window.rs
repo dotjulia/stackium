@@ -1,4 +1,4 @@
-use egui::{Align, Align2, Color32, RichText, Stroke, Vec2b};
+use egui::{Align, Align2, Color32, RichText, Stroke, Vec2, Vec2b};
 use egui_plot::{Arrows, Plot};
 use egui_plot::{Line, PlotPoint, PlotPoints, PlotUi, Polygon, Text, VLine};
 use poll_promise::Promise;
@@ -72,6 +72,9 @@ fn render_pointer_arrow(
     const ARROWS_HOME_POS: f64 = 35f64;
     const ARROWS_HOME_OFFSET: f64 = 1.0;
     const ARROWS_END_OFFSET: f64 = 7f64;
+
+    // offset end point so outgoing and ingoing pointer don't overlap
+    let end: PlotPoint = [end.x, end.y + 0.5].into();
 
     let arrow_home = ARROWS_HOME_POS + ARROWS_HOME_OFFSET * *arrow_counter as f64;
 
@@ -404,6 +407,7 @@ impl DebuggerWindowImpl for MemoryWindow {
         self.cached_addresses = None;
     }
     fn ui(&mut self, ui: &mut egui::Ui) -> bool {
+        let mut should_zoom_factor = 1f32;
         ui.horizontal(|ui| {
             ui.checkbox(&mut self.grid, "Show Grid");
             ui.checkbox(&mut self.coordinates, "Show Coordinates");
@@ -422,6 +426,12 @@ impl DebuggerWindowImpl for MemoryWindow {
                 DataVisualization::Decimal,
                 "🔢 Decimal",
             );
+            if ui.button(RichText::new("-").monospace()).clicked() {
+                should_zoom_factor = 0.8;
+            }
+            if ui.button(RichText::new("+").monospace()).clicked() {
+                should_zoom_factor = 1.2;
+            }
         });
         if let (Some(Ok(variables)), Some(Ok(registers))) =
             (self.variables.ready(), self.registers.ready())
@@ -463,6 +473,12 @@ impl DebuggerWindowImpl for MemoryWindow {
                 .show_y(self.coordinates)
                 // .allow_zoom(false)
                 .show(ui, |ui| {
+                    if (should_zoom_factor - 1.0).abs() > 0.1 {
+                        ui.zoom_bounds(
+                            Vec2::new(should_zoom_factor, should_zoom_factor),
+                            ui.plot_bounds().center(),
+                        );
+                    }
                     render_addresses(ui, &stack_range, self.cached_addresses.as_ref().unwrap());
                     for variable in deduplicated_variables {
                         render_variable(

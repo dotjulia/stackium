@@ -47,7 +47,8 @@ enum DebugInterfaceMode {
 struct Args {
     #[clap(index = 1)]
     program: PathBuf,
-    #[clap(short, long, default_value = "cli")]
+    #[cfg_attr(feature = "web", clap(short, long, default_value = "web"))]
+    #[cfg_attr(not(feature = "web"), clap(short, long, default_value = "cli"))]
     mode: DebugInterfaceMode,
 }
 

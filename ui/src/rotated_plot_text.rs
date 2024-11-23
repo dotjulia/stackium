@@ -10,8 +10,20 @@ pub struct RotText {
 }
 
 impl RotText {
-    pub fn new(text: String, angle: f32, size: f32, pos: (f32, f32), color: Option<Color32>) -> Self {
-        Self { text, angle, size, pos, color }
+    pub fn new(
+        text: String,
+        angle: f32,
+        size: f32,
+        pos: (f32, f32),
+        color: Option<Color32>,
+    ) -> Self {
+        Self {
+            text,
+            angle,
+            size,
+            pos,
+            color,
+        }
     }
 }
 
@@ -38,9 +50,7 @@ impl PlotItem for RotText {
         }));
     }
 
-    fn initialize(&mut self, x_range: std::ops::RangeInclusive<f64>) {
-        
-    }
+    fn initialize(&mut self, x_range: std::ops::RangeInclusive<f64>) {}
 
     fn name(&self) -> &str {
         "Rotated Text"
@@ -70,5 +80,9 @@ impl PlotItem for RotText {
 
     fn id(&self) -> Option<Id> {
         None
+    }
+
+    fn allow_hover(&self) -> bool {
+        false
     }
 }

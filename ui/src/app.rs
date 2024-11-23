@@ -212,7 +212,7 @@ impl eframe::App for StackiumApp {
                     }
                 });
 
-                egui::widgets::global_dark_light_mode_buttons(ui);
+                egui::widgets::global_theme_preference_buttons(ui);
             });
         });
 
@@ -236,12 +236,9 @@ impl eframe::App for StackiumApp {
 
                 egui::SidePanel::left("side_panel").show_animated(ctx, *sidebar_open, |ui| {
                     ui.horizontal(|ui| {
-                        egui::widgets::global_dark_light_mode_buttons(ui);
+                        egui::widgets::global_theme_preference_buttons(ui);
                         if ui
-                            .add(
-                                egui::Button::new("↻ Restart Process")
-                                    .fill(ui.visuals().window_fill),
-                            )
+                            .add(egui::Button::new("↻ Restart").fill(ui.visuals().window_fill))
                             .clicked()
                         {
                             *restart_request = Some(dispatch_command_and_then(
@@ -290,8 +287,32 @@ impl eframe::App for StackiumApp {
                                         if window.is_active {
                                             dockable_windows.add_window(vec![window.title]);
                                         } else {
-                                            dockable_windows
-                                                .retain_tabs(|tab| tab != &window.title);
+                                            let mut to_remove = None;
+
+                                            // I see no other way of iterating over all tabs and getting all 3 (surface_index, node_index, tab_index)
+                                            for (surface_index, surface) in
+                                                dockable_windows.iter_surfaces().enumerate()
+                                            {
+                                                for (node_index, node) in
+                                                    surface.iter_nodes().enumerate()
+                                                {
+                                                    for (tab_index, tab) in
+                                                        node.iter_tabs().enumerate()
+                                                    {
+                                                        if tab == &window.title {
+                                                            to_remove = Some((
+                                                                egui_dock::SurfaceIndex(
+                                                                    surface_index,
+                                                                ),
+                                                                egui_dock::NodeIndex(node_index),
+                                                                egui_dock::TabIndex(tab_index),
+                                                            ));
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            dockable_windows.remove_tab(to_remove.unwrap());
                                         }
                                     }
                                 },
@@ -326,7 +347,7 @@ impl eframe::App for StackiumApp {
                                     .style(egui_dock::Style::from_egui(ui.style()))
                                     .draggable_tabs(true)
                                     .show_close_buttons(true)
-                                    .show_window_close_buttons(true)
+                                    .show_window_close_buttons(false)
                                     // .allowed_splits(self.context.allowed_splits)
                                     .show_window_collapse_buttons(true)
                                     .show_inside(ui, tab_viewer);
