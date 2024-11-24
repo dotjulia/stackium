@@ -19,7 +19,7 @@ Arguments:
   <PROGRAM>  
 
 Options:
-  -m, --mode <MODE>  [default: cli] [possible values: cli, web, gui]
+  -m, --mode <MODE>  [default: web] [possible values: cli, web, gui]
   -h, --help         Print help
   -V, --version      Print version
 ----
@@ -45,3 +45,4 @@ If you do not want to use the provided script, you need to specify the following
 ** enable debug symbols
 * `-O0`
 ** disable optimizations
+

@@ -500,7 +500,7 @@ impl Debugger {
                     // size is at most word size
                     let data = self.read(address as *mut _)?;
                     // println("{:?}", evaluation.state)
-                    println!("{:?} {:?} {:?} {:?}", address, size, space, base_type);
+                    debug_println!("{:?} {:?} {:?} {:?}", address, size, space, base_type);
                     result = evaluation.resume_with_memory(gimli::Value::Generic(data))?;
                 }
                 EvaluationResult::RequiresRegister {
@@ -584,11 +584,11 @@ impl Debugger {
                 if let Some(location) = sub_entry.attr_value(gimli::DW_AT_location)? {
                     let mut by_offset = |offset| -> Result<(), DebugError> {
                         let mut locations = self.dwarf.locations(&unit, offset).unwrap();
-                        println!("{:?}", locations);
-                        println!("{:?}", var.name);
+                        debug_println!("{:?}", locations);
+                        debug_println!("{:?}", var.name);
                         let mut expression = None;
                         while let Some(location) = locations.next()? {
-                            println!("{:?}", location);
+                            debug_println!("{:?}", location);
                             if self.get_pc()? >= location.range.begin && self.get_pc()? <= location.range.end {
                                 expression = Some(location.data);
                             }

@@ -26,6 +26,10 @@ body {
   color: var(--maincolor);
 }
 
+.fa::before {
+    color: var(--white) !important;
+}
+
 #toctitle {
   color: #ca3faa;
   /* glow */
@@ -126,10 +130,17 @@ h6 {
 }
 
 .title {
-  color: var(--tertiarycolor) !important;
+  color: var(--secondarycolor) !important;
   font-family: "Source Code Pro", sans-serif !important;
   font-style: normal !important;
   font-weight: normal !important;
+}
+
+details .title {
+    color: var(--linkcolor) !important;
+}
+
+details .title:hover {
 }
 
 /* Sidebar */

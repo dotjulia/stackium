@@ -24,7 +24,8 @@ image:https://img.shields.io/badge/rustc-%5E1.71.1-orange.svg[] image:https://im
 
 [[navigation]]
 --
-link:index.html[[Home\]] link:beginner_example.html[[Example for Beginners\]] link:windows.html[[Window Overview\]] link:memory_view.html[[Memory View\]]
+//link:index.html[[Home\]] link:beginner_example.html[[Example for Beginners\]] link:windows.html[[Window Overview\]] link:memory_view.html[[Memory View\]]
+link:index.html[[Home\]] link:setup.html[[Setup\]] link:simple_example.html[[Introductory Example\]]
 --
 
 ++++
