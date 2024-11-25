@@ -52,6 +52,8 @@ int main(void)
 [.text-left]
 == Setting a breakpoint
 
+WARNING: You can't set a breakpoint in an empty line or a comment. Only set breakpoints in lines with code.
+
 Before we start running the program, we need to set some breakpoints. We will be able to inspect the memory of the program at those breakpoints.
 
 [open.imgcols]
