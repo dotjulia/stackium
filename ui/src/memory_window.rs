@@ -30,6 +30,7 @@ pub struct MemoryWindow {
     coordinates: bool,
     cached_addresses: Option<Vec<u64>>,
     data_visualization: DataVisualization,
+    first_base_pointer: Option<u64>,
 }
 
 impl MemoryWindow {
@@ -42,6 +43,7 @@ impl MemoryWindow {
             coordinates: false,
             cached_addresses: None,
             data_visualization: DataVisualization::Hex,
+            first_base_pointer: None,
         };
         ret.dirty();
         ret
@@ -436,7 +438,16 @@ impl DebuggerWindowImpl for MemoryWindow {
         if let (Some(Ok(variables)), Some(Ok(registers))) =
             (self.variables.ready(), self.registers.ready())
         {
-            let stack_range = registers.stack_pointer..registers.base_pointer;
+            // let stack_range = registers.stack_pointer..registers.base_pointer;
+            let base = if self.first_base_pointer.is_some() {
+                self.first_base_pointer.unwrap()
+            } else if registers.stack_pointer < registers.base_pointer {
+                self.first_base_pointer = Some(registers.base_pointer);
+                registers.base_pointer
+            } else {
+                registers.base_pointer
+            };
+            let stack_range = registers.stack_pointer..base;
             let mut deduplicated_variables = variables.clone();
             deduplicated_variables.sort_by(|a, b| a.addr.unwrap().cmp(&b.addr.unwrap()));
             deduplicated_variables.dedup_by(|a, b| a.addr.unwrap() == b.addr.unwrap());
